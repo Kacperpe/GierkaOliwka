@@ -1,5 +1,7 @@
 # Gierka Oliwka 🍹
 
+Widok 3D z perspektywy stołu.
+
 Gra na Androida: celujesz napojem, strzelasz w górę stołu, a dwa takie same napoje łączą się w wyższy poziom.
 
 ## Zasady
@@ -10,6 +12,12 @@ Gra na Androida: celujesz napojem, strzelasz w górę stołu, a dwa takie same n
 - **Zamówienia** u góry: stworzenie zamówionego napoju daje bonus (5× wartość poziomu).
 - Koniec gry, gdy po strzale jakiś obiekt zatrzyma się poniżej przerywanej linii.
 - Rekord i stan gry zapisują się automatycznie.
+
+## Aktualizacje
+- **Gra (HTML/JS w `app/src/main/assets/`)** — aplikacja przy każdym starcie pobiera pliki z najnowszego commita na `main`
+  (lista w `assets/files.txt`). Wystarczy push — zmiana jest widoczna po ponownym uruchomieniu, bez instalowania APK.
+  Offline działa ostatnia pobrana wersja (albo wbudowana w APK).
+- **APK (kod Kotlin, manifest itd.)** — push poza `assets/` buduje nowy APK w Releases, a aplikacja sama proponuje aktualizację.
 
 ## Pobieranie APK
 Każdy push na `main` buduje APK w GitHub Actions i publikuje go w zakładce **Releases** (`GierkaOliwka.apk`).

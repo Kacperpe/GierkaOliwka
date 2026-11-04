@@ -3,6 +3,10 @@ name: Build APK
 on:
   push:
     branches: [main]
+    # zmiany samej gry (assets) docierają do telefonów bez nowego APK
+    paths-ignore:
+      - 'app/src/main/assets/**'
+      - 'README.md'
   workflow_dispatch:
 
 permissions:
