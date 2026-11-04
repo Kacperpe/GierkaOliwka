@@ -36,8 +36,8 @@ const shapeHeight = lv => {
 };
 
 // ---------- świat / kamera ----------
-const TW = 360, TL = 760;               // stół w jednostkach fizyki
-const T = { left: 0, right: TW, top: 0, bottom: TL, line: TL - 150, launchY: TL - 72 };
+const TW = 360, TL = 600;               // stół w jednostkach fizyki
+const T = { left: 0, right: TW, top: 0, bottom: TL, line: TL - 140, launchY: TL - 70 };
 const CAM = { h: 760, back: 380, pitch: 56 * Math.PI / 180 };
 const FRAME = 18;
 
@@ -69,7 +69,7 @@ function layout() {
   const fl = rawProj(-TW / 2 - FRAME, TL + FRAME, 0);
   const yTop = Math.max(168, H * 0.2), yBot = H - 106;
   PSX = 386 / (nr[0] - nl[0]);
-  PSY = Math.min(PSX * 1.45, (yBot - yTop) / (nl[1] - fl[1]));
+  PSY = Math.min(PSX * 1.12, (yBot - yTop) / (nl[1] - fl[1]));
   POX = 200;
   POY = yBot - nl[1] * PSY;
 }
@@ -96,11 +96,14 @@ function rndSpawn() {
   return 1;
 }
 
-function newOrder() {
+function newOrder(skip = -1) {
   const lo = Math.min(MAX_LV, Math.max(4, maxReached - 1));
   const hi = Math.min(MAX_LV, Math.max(5, maxReached + 1));
-  let lv = lo + Math.floor(Math.random() * (hi - lo + 1));
-  if (orders.some(o => o.lv === lv) && lv < MAX_LV) lv++;
+  const taken = orders.filter((o, i) => i !== skip).map(o => o.lv);
+  let pool = [];
+  for (let l = lo; l <= hi; l++) if (!taken.includes(l)) pool.push(l);
+  if (!pool.length) for (let l = 4; l <= MAX_LV; l++) if (!taken.includes(l)) pool.push(l);
+  const lv = pool[Math.floor(Math.random() * pool.length)] || lo;
   return { lv, reward: mergePoints(lv) * 5 };
 }
 
@@ -240,7 +243,11 @@ function doMerge(a, b) {
     floaters.push({ x, y, text: '+' + pts + ' MEGA!', t: 0, big: true });
     burst(x, y, '#ffd54f', 40);
   } else {
-    const n = makeItem(lv + 1, x, y, (a.vx + b.vx) * 0.3, (a.vy + b.vy) * 0.3);
+    // nowy obiekt zachowuje prędkość szybszego z pary (kierunek wypadkowy) i leci dalej
+    const sa = Math.hypot(a.vx, a.vy), sb = Math.hypot(b.vx, b.vy), sp = Math.max(sa, sb);
+    let dvx = a.vx + b.vx, dvy = a.vy + b.vy, dl = Math.hypot(dvx, dvy);
+    if (dl < 1e-6) { const f = sa >= sb ? a : b; dvx = f.vx; dvy = f.vy; dl = Math.max(1e-6, Math.hypot(dvx, dvy)); }
+    const n = makeItem(lv + 1, x, y, dvx / dl * sp, dvy / dl * sp);
     n.pop = 1;
     n.x = Math.max(n.r, Math.min(TW - n.r, n.x));
     n.y = Math.max(n.r, Math.min(TL - n.r, n.y));
@@ -252,7 +259,7 @@ function doMerge(a, b) {
       if (orders[k].lv === lv + 1) {
         score += orders[k].reward;
         floaters.push({ x, y, text: 'Zamówienie! +' + orders[k].reward, t: -0.25, big: true });
-        orders[k] = newOrder();
+        orders[k] = newOrder(k);
         break;
       }
     }
@@ -418,13 +425,6 @@ function drawVessel(lv, ox, oy, sx, sy, f, alpha = 1) {
     ctx.fillText(L.emoji, ox - top[1] * sx * .55, Y(top[0]) - es * .15);
   }
 
-  // numer poziomu
-  const nh = p[0][0] + (sh.fill - p[0][0]) * .45;
-  const fs = Math.round(Math.max(9, .48 * sx));
-  ctx.font = `bold ${fs}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-  ctx.strokeText(lv, ox + widthAt(p, nh) * sx * .3, Y(nh));
-  ctx.fillStyle = '#fff'; ctx.fillText(lv, ox + widthAt(p, nh) * sx * .3, Y(nh));
   ctx.globalAlpha = 1;
 }
 
@@ -450,6 +450,164 @@ function drawIcon(lv, cx, cy, size, alpha = 1) {
   drawVessel(lv, cx, cy + hgt * sx * .5 - .3 * sx, sx, sx, .32, alpha);
 }
 
+// ---------- animowane tło plaży ----------
+const CLOUDS = [{ x: 30, y: .2, s: 1.1, v: 7 }, { x: 210, y: .42, s: .75, v: 11 }, { x: 330, y: .1, s: 1.35, v: 4.5 }, { x: 120, y: .6, s: .55, v: 14 }];
+const wrap = (v, m) => ((v % m) + m) % m;
+
+function cloud(x, y, s) {
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.beginPath();
+  ctx.arc(x, y, 14 * s, 0, Math.PI * 2); ctx.arc(x + 16 * s, y - 8 * s, 17 * s, 0, Math.PI * 2);
+  ctx.arc(x + 36 * s, y - 2 * s, 14 * s, 0, Math.PI * 2); ctx.arc(x + 20 * s, y + 6 * s, 14 * s, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function palm(bx, by, lean, h, phase) {
+  const sway = Math.sin(time * 1.1 + phase) * 0.07;
+  const tx = bx + lean * h * .55 + sway * h * .4, ty = by - h;
+  // pień
+  ctx.strokeStyle = '#8d6e3f'; ctx.lineCap = 'round';
+  for (let i = 0; i < 9; i++) {
+    const t0 = i / 9, t1 = (i + 1) / 9;
+    const px = t => bx + (tx - bx) * t + lean * h * .25 * Math.sin(t * Math.PI);
+    const py = t => by + (ty - by) * t;
+    ctx.lineWidth = 13 - i * .8;
+    ctx.strokeStyle = i % 2 ? '#8d6e3f' : '#a1814f';
+    ctx.beginPath(); ctx.moveTo(px(t0), py(t0)); ctx.lineTo(px(t1), py(t1)); ctx.stroke();
+  }
+  // kokosy
+  ctx.fillStyle = '#6d4c2f';
+  for (const [dx, dy] of [[-6, 5], [5, 6], [0, 9]]) { ctx.beginPath(); ctx.arc(tx + dx, ty + dy, 5, 0, Math.PI * 2); ctx.fill(); }
+  // liście
+  for (let i = 0; i < 7; i++) {
+    const a = -Math.PI / 2 + (i - 3) * .5 + sway * 2.2 + Math.sin(time * 2 + i + phase) * .03;
+    const len = 62 + (i % 2) * 12;
+    ctx.save(); ctx.translate(tx, ty); ctx.rotate(a);
+    const g = ctx.createLinearGradient(0, 0, len, 0);
+    g.addColorStop(0, '#2e7d32'); g.addColorStop(1, '#81c784');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(len * .5, -16, len, 10);
+    ctx.quadraticCurveTo(len * .5, 4, 0, 0);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(27,94,32,0.6)'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(len * .5, -7, len, 10); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawBackdrop(tableTop) {
+  const horizon = Math.max(70, tableTop - 95);
+  const seaH = 58, shore = horizon + seaH;
+  // niebo
+  let g = ctx.createLinearGradient(0, 0, 0, horizon);
+  g.addColorStop(0, '#2f9ee8'); g.addColorStop(.7, '#8fd3ff'); g.addColorStop(1, '#d9f3ff');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, horizon + 1);
+  // słońce z obracającymi się promieniami
+  const sunX = 118, sunY = horizon * .62;
+  ctx.save(); ctx.translate(sunX, sunY); ctx.rotate(time * .12);
+  ctx.fillStyle = 'rgba(255,241,170,0.35)';
+  for (let i = 0; i < 12; i++) {
+    ctx.rotate(Math.PI / 6);
+    ctx.beginPath(); ctx.moveTo(-5, -26); ctx.lineTo(0, -48 - 6 * Math.sin(time * 2 + i)); ctx.lineTo(5, -26); ctx.fill();
+  }
+  ctx.restore();
+  g = ctx.createRadialGradient(sunX, sunY, 4, sunX, sunY, 24);
+  g.addColorStop(0, '#fffde7'); g.addColorStop(.7, '#ffe082'); g.addColorStop(1, 'rgba(255,224,130,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sunX, sunY, 24, 0, Math.PI * 2); ctx.fill();
+  // chmury
+  for (const c of CLOUDS) cloud(wrap(c.x + time * c.v, W + 140) - 70, 40 + (horizon - 60) * c.y, c.s);
+  // mewy
+  ctx.strokeStyle = '#37474f'; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+  for (let i = 0; i < 3; i++) {
+    const bx = wrap(i * 160 + time * (22 + i * 5), W + 80) - 40;
+    const by = 52 + i * 14 + Math.sin(time * .9 + i * 2) * 7;
+    const wing = 3 + Math.sin(time * 7 + i * 1.7) * 4;
+    ctx.beginPath(); ctx.moveTo(bx - 9, by - wing); ctx.quadraticCurveTo(bx - 4, by - 2, bx, by);
+    ctx.quadraticCurveTo(bx + 4, by - 2, bx + 9, by - wing); ctx.stroke();
+  }
+  // wyspa w oddali
+  ctx.fillStyle = '#5fa8a0';
+  ctx.beginPath(); ctx.moveTo(240, horizon + 1);
+  ctx.quadraticCurveTo(285, horizon - 30, 315, horizon - 18); ctx.quadraticCurveTo(350, horizon - 34, 410, horizon + 1); ctx.fill();
+  // morze
+  g = ctx.createLinearGradient(0, horizon, 0, shore);
+  g.addColorStop(0, '#0277bd'); g.addColorStop(.6, '#1fa8d8'); g.addColorStop(1, '#5fe0e0');
+  ctx.fillStyle = g; ctx.fillRect(0, horizon, W, seaH + 2);
+  // błyski fal
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1.5;
+  for (let k = 0; k < 4; k++) {
+    const yy = horizon + 9 + k * 12, ph = time * (1.2 + k * .35) + k;
+    ctx.beginPath();
+    for (let x = -10; x <= W + 10; x += 8) {
+      const y2 = yy + Math.sin(x * .05 + ph) * (1 + k * .5);
+      x === -10 ? ctx.moveTo(x, y2) : ctx.lineTo(x, y2);
+    }
+    ctx.setLineDash([10 + k * 4, 18 + k * 6]); ctx.lineDashOffset = -time * (14 + k * 6); ctx.stroke();
+  }
+  ctx.setLineDash([]); ctx.lineDashOffset = 0;
+  // żaglówka
+  const bx = wrap(time * 10, W + 120) - 60, by = horizon + 13 + Math.sin(time * 1.6) * 1.6;
+  ctx.save(); ctx.translate(bx, by); ctx.rotate(Math.sin(time * 1.6) * .05);
+  ctx.fillStyle = '#5d4037';
+  ctx.beginPath(); ctx.moveTo(-14, 0); ctx.lineTo(14, 0); ctx.lineTo(9, 6); ctx.lineTo(-9, 6); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#fafafa';
+  ctx.beginPath(); ctx.moveTo(1, -1); ctx.lineTo(1, -28); ctx.lineTo(14, -2); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#ef5350';
+  ctx.beginPath(); ctx.moveTo(-1, -2); ctx.lineTo(-1, -22); ctx.lineTo(-11, -2); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // delfin wyskakujący co kilka sekund
+  const dc = wrap(time, 7) / 1.4;
+  if (dc < 1) {
+    const dx = 70 + Math.floor(time / 7) % 3 * 90 + dc * 50, dy = horizon + 34 - Math.sin(dc * Math.PI) * 26;
+    ctx.save(); ctx.translate(dx, dy); ctx.rotate(-Math.PI / 4 + dc * Math.PI / 2);
+    ctx.fillStyle = '#546e7a';
+    ctx.beginPath(); ctx.ellipse(0, 0, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-2, -4); ctx.lineTo(2, -10); ctx.lineTo(5, -4); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-12, 0); ctx.lineTo(-18, -5); ctx.lineTo(-18, 5); ctx.fill();
+    ctx.restore();
+  }
+  // piasek
+  g = ctx.createLinearGradient(0, shore, 0, H);
+  g.addColorStop(0, '#ffe9b8'); g.addColorStop(1, '#efc277');
+  ctx.fillStyle = g; ctx.fillRect(0, shore, W, H - shore);
+  // fala wpływająca na brzeg (w pętli)
+  const surf = Math.sin(time * .9) * 5;
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.beginPath(); ctx.moveTo(0, shore - 3);
+  for (let x = 0; x <= W; x += 10) ctx.lineTo(x, shore + 2 + surf + Math.sin(x * .07 + time * 1.5) * 2.5);
+  ctx.lineTo(W, shore - 3); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(95,224,224,0.5)';
+  ctx.beginPath(); ctx.moveTo(0, shore - 3);
+  for (let x = 0; x <= W; x += 10) ctx.lineTo(x, shore - 1 + surf * .6 + Math.sin(x * .07 + time * 1.5) * 2);
+  ctx.lineTo(W, shore - 3); ctx.closePath(); ctx.fill();
+  // muszelki na piasku
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  for (const [x, y] of [[30, 18], [355, 30], [190, 26], [300, 12]]) {
+    ctx.beginPath(); ctx.ellipse(x, shore + y, 3, 2, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  // krab chodzący wzdłuż brzegu
+  const cx = 200 + Math.sin(time * .35) * 170, cy = shore + 20;
+  const walk = Math.sin(time * 9);
+  ctx.strokeStyle = '#c62828'; ctx.lineWidth = 1.6;
+  for (let i = -1; i <= 1; i += 2) for (let l = 0; l < 3; l++) {
+    ctx.beginPath(); ctx.moveTo(cx + i * 5, cy + 1 + l);
+    ctx.lineTo(cx + i * (11 + l * 2), cy + 5 + l * 1.5 + (l % 2 ? walk : -walk) * 1.5); ctx.stroke();
+  }
+  ctx.fillStyle = '#e53935';
+  ctx.beginPath(); ctx.ellipse(cx, cy, 9, 6, 0, 0, Math.PI * 2); ctx.fill();
+  for (let i = -1; i <= 1; i += 2) {
+    ctx.beginPath(); ctx.arc(cx + i * 12, cy - 7 + Math.sin(time * 3 + i) * 1.5, 3.5, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(cx - 3, cy - 6, 2, 0, Math.PI * 2); ctx.arc(cx + 3, cy - 6, 2, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.arc(cx - 3, cy - 6, 1, 0, Math.PI * 2); ctx.arc(cx + 3, cy - 6, 1, 0, Math.PI * 2); ctx.fill();
+  // palmy po bokach
+  palm(-4, tableTop + 70, .35, 175, 0);
+  palm(W + 6, tableTop + 60, -.4, 160, 1.7);
+}
+
 // ---------- scena ----------
 function quad(pts) {
   ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
@@ -458,20 +616,9 @@ function quad(pts) {
 }
 
 function drawScene() {
-  // niebo, morze, piasek
   const far = proj(0, -FRAME);
-  const horizon = Math.max(60, far.y - 70);
-  let g = ctx.createLinearGradient(0, 0, 0, horizon);
-  g.addColorStop(0, '#4fc3f7'); g.addColorStop(1, '#b3e5fc');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, horizon);
-  g = ctx.createLinearGradient(0, horizon, 0, horizon + 50);
-  g.addColorStop(0, '#0288d1'); g.addColorStop(1, '#4dd0e1');
-  ctx.fillStyle = g; ctx.fillRect(0, horizon, W, 50);
-  ctx.fillStyle = 'rgba(255,255,255,0.7)';
-  ctx.fillRect(0, horizon + 46, W, 4);
-  g = ctx.createLinearGradient(0, horizon + 50, 0, H);
-  g.addColorStop(0, '#ffe7b3'); g.addColorStop(1, '#f0c37a');
-  ctx.fillStyle = g; ctx.fillRect(0, horizon + 50, W, H);
+  drawBackdrop(far.y);
+  let g;
   // strzecha
   ctx.fillStyle = '#c79a52'; ctx.fillRect(0, 0, W, 18);
   ctx.fillStyle = '#a97b3a';
