@@ -85,6 +85,10 @@ let lastShot = -10, shotItem = null;
 let orders = [];
 let gameOver = false, time = 0;
 let maxReached = 1;
+// power-upy
+let powerups = 0, armed = false, orb = null, shotMerges = 0, powerGranted = false;
+let bolts = [], flash = 0;
+const POWER_BTN = { x: 44, y: 128, r: 24 };
 
 try { best = +localStorage.getItem('go_best') || 0; } catch (e) {}
 
@@ -113,6 +117,7 @@ function makeItem(lv, x, y, vx = 0, vy = 0) {
 
 function reset() {
   items = []; particles = []; floaters = [];
+  powerups = 0; armed = false; orb = null; bolts = [];
   score = 0; maxReached = 1; gameOver = false; shotItem = null;
   current = rndSpawn(); next = rndSpawn();
   orders = []; orders.push(newOrder()); orders.push(newOrder());
@@ -126,7 +131,7 @@ window.saveGame = function () {
     if (gameOver) { localStorage.removeItem('go_state'); return; }
     localStorage.setItem('go_state', JSON.stringify({
       items: items.map(i => ({ lv: i.lv, x: i.x / TW, y: i.y / TL })),
-      score, current, next, orders, maxReached,
+      score, current, next, orders, maxReached, powerups,
     }));
   } catch (e) {}
 };
@@ -141,7 +146,7 @@ function loadGame() {
       it.y = Math.max(it.r, Math.min(TL - it.r, it.y));
       return it;
     });
-    score = s.score; current = s.current; next = s.next; maxReached = s.maxReached || 1;
+    score = s.score; current = s.current; next = s.next; maxReached = s.maxReached || 1; powerups = s.powerups || 0;
     orders = (s.orders || []).map(o => ({ lv: o.lv, reward: o.reward }));
     while (orders.length < 2) orders.push(newOrder());
     return true;
@@ -161,6 +166,12 @@ function clampAim(x) {
 }
 cv.addEventListener('pointerdown', e => {
   if (gameOver) return;
+  const rc = cv.getBoundingClientRect();
+  const sx = (e.clientX - rc.left) / rc.width * W, sy = (e.clientY - rc.top) / rc.height * H;
+  if (Math.hypot(sx - POWER_BTN.x, sy - POWER_BTN.y) < POWER_BTN.r + 8) {
+    if (powerups > 0) armed = !armed;
+    return;
+  }
   aiming = true; aimX = clampAim(screenToTableX(e));
 });
 cv.addEventListener('pointermove', e => { if (aiming) aimX = clampAim(screenToTableX(e)); });
@@ -171,6 +182,7 @@ document.getElementById('again').addEventListener('click', reset);
 function canShoot() {
   if (gameOver) return false;
   if (time - lastShot < 0.35) return false;
+  if (orb) return false;
   if (shotItem && !shotItem.dead && shotItem.y > T.line - shotItem.r &&
       Math.hypot(shotItem.vx, shotItem.vy) > 20) return false;
   return true;
@@ -178,6 +190,14 @@ function canShoot() {
 
 function shoot() {
   if (!canShoot()) return;
+  shotMerges = 0; powerGranted = false;
+  if (armed && powerups > 0) {
+    powerups--; armed = false;
+    orb = { x: clampAim(aimX), y: T.launchY, vx: 0, vy: -1120, r: 20 };
+    lastShot = time; shotItem = null;
+    return;
+  }
+  armed = false;
   const it = makeItem(current, clampAim(aimX), T.launchY, 0, -1120);
   items.push(it);
   shotItem = it;
@@ -189,21 +209,29 @@ function shoot() {
 // ---------- fizyka ----------
 const REST_WALL = 0.55, REST_BALL = 0.35;
 const FRICTION_CONST = 260, FRICTION_MUL = 0.9;
+const GRAVITY = 360;   // przyciąganie w stronę dalekiego końca stołu (północ)
+const bounce = v => (Math.abs(v) > 40 ? Math.abs(v) * REST_WALL : 0);
+
+function movePhys(o, dt) {
+  o.vy -= GRAVITY * dt;
+  const sp = Math.hypot(o.vx, o.vy);
+  if (sp > 0) {
+    let ns = sp - (FRICTION_CONST + FRICTION_MUL * sp) * dt;
+    if (ns < 0) ns = 0;
+    o.vx *= ns / sp; o.vy *= ns / sp;
+  }
+  o.x += o.vx * dt; o.y += o.vy * dt;
+  if (o.x - o.r < 0)  { o.x = o.r;      o.vx = bounce(o.vx); }
+  if (o.x + o.r > TW) { o.x = TW - o.r; o.vx = -bounce(o.vx); }
+}
 
 function step(dt) {
   for (const it of items) {
-    const sp = Math.hypot(it.vx, it.vy);
-    if (sp > 0) {
-      let ns = sp - (FRICTION_CONST + FRICTION_MUL * sp) * dt;
-      if (ns < 2) ns = 0;
-      it.vx *= ns / sp; it.vy *= ns / sp;
-    }
-    it.x += it.vx * dt; it.y += it.vy * dt;
-    if (it.x - it.r < 0)   { it.x = it.r;      it.vx = Math.abs(it.vx) * REST_WALL; }
-    if (it.x + it.r > TW)  { it.x = TW - it.r; it.vx = -Math.abs(it.vx) * REST_WALL; }
-    if (it.y - it.r < 0)   { it.y = it.r;      it.vy = Math.abs(it.vy) * REST_WALL; }
-    if (it.y + it.r > TL)  { it.y = TL - it.r; it.vy = -Math.abs(it.vy) * REST_WALL; }
+    movePhys(it, dt);
+    if (it.y - it.r < 0)   { it.y = it.r;      it.vy = bounce(it.vy); }
+    if (it.y + it.r > TL)  { it.y = TL - it.r; it.vy = -bounce(it.vy); }
   }
+  if (orb) stepOrb(dt);
 
   const merges = [];
   for (let i = 0; i < items.length; i++) {
@@ -223,7 +251,7 @@ function step(dt) {
       b.x += nx * ov * ma / (ma + mb); b.y += ny * ov * ma / (ma + mb);
       const rv = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
       if (rv < 0) {
-        const jimp = -(1 + REST_BALL) * rv / (1 / ma + 1 / mb);
+        const jimp = -(1 + (rv < -40 ? REST_BALL : 0)) * rv / (1 / ma + 1 / mb);
         a.vx -= jimp * nx / ma; a.vy -= jimp * ny / ma;
         b.vx += jimp * nx / mb; b.vy += jimp * ny / mb;
       }
@@ -239,6 +267,12 @@ function doMerge(a, b) {
   const pts = mergePoints(lv);
   score += pts;
   burst(x, y, LEVELS[lv - 1].liq[0], 16);
+  shotMerges++;
+  if (shotMerges >= 2) floaters.push({ x, y, text: 'Combo x' + shotMerges, t: -0.15, big: true, dy: 26 });
+  if (shotMerges > 3 && !powerGranted) {
+    powerGranted = true; powerups++;
+    floaters.push({ x: TW / 2, y: TL * .45, text: '⚡ POWER-UP! ⚡', t: -0.3, big: true, huge: true });
+  }
   if (lv >= MAX_LV) {
     floaters.push({ x, y, text: '+' + pts + ' MEGA!', t: 0, big: true });
     burst(x, y, '#ffd54f', 40);
@@ -255,16 +289,132 @@ function doMerge(a, b) {
     if (shotItem === a || shotItem === b) shotItem = n;
     maxReached = Math.max(maxReached, lv + 1);
     floaters.push({ x, y, text: '+' + pts, t: 0 });
-    for (let k = 0; k < orders.length; k++) {
-      if (orders[k].lv === lv + 1) {
-        score += orders[k].reward;
-        floaters.push({ x, y, text: 'Zamówienie! +' + orders[k].reward, t: -0.25, big: true });
-        orders[k] = newOrder(k);
-        break;
-      }
-    }
+    checkOrders(lv + 1, x, y);
   }
   if (score > best) best = score;
+}
+
+function checkOrders(lv, x, y) {
+  for (let k = 0; k < orders.length; k++) {
+    if (orders[k].lv === lv) {
+      score += orders[k].reward;
+      floaters.push({ x, y, text: 'Zamówienie! +' + orders[k].reward, t: -0.25, big: true });
+      orders[k] = newOrder(k);
+      break;
+    }
+  }
+}
+
+// ---------- power-up: piorun ----------
+function stepOrb(dt) {
+  movePhys(orb, dt);
+  for (const it of items) {
+    if (Math.hypot(it.x - orb.x, it.y - orb.y) < it.r + orb.r) { lightning(it); orb = null; return; }
+  }
+  if (orb.y - orb.r < 0 || orb.y > TL || Math.hypot(orb.vx, orb.vy) < 15) {
+    floaters.push({ x: orb.x, y: Math.max(40, orb.y), text: 'Pudło — ⚡ wraca', t: 0 });
+    powerups++; orb = null;
+  }
+}
+
+function lightning(hit) {
+  const lv = hit.lv;
+  const group = items.filter(i => i.lv === lv);
+  const far = group.reduce((a, b) => (b.y < a.y ? b : a));
+  const pts = group.length * Math.pow(2, lv - 1);
+  score += pts;
+  bolts.push({ src: { x: hit.x, y: hit.y, z: hit.r }, pts: group.map(g => ({ x: g.x, y: g.y, z: g.r })),
+    to: { x: far.x, y: far.y, z: far.r }, t: 0 });
+  flash = 1;
+  for (const g of group) { g.dead = true; burst(g.x, g.y, '#fff59d', 10); burst(g.x, g.y, '#4fc3f7', 6); }
+  items = items.filter(i => !i.dead);
+  if (lv >= MAX_LV) {
+    floaters.push({ x: far.x, y: far.y, text: '⚡ +' + pts + ' MEGA!', t: 0, big: true });
+  } else {
+    const n = makeItem(lv + 1, far.x, far.y);
+    n.x = Math.max(n.r, Math.min(TW - n.r, n.x));
+    n.y = Math.max(n.r, Math.min(TL - n.r, n.y));
+    n.pop = 1;
+    items.push(n);
+    maxReached = Math.max(maxReached, lv + 1);
+    floaters.push({ x: far.x, y: far.y, text: '⚡ x' + group.length + '  +' + pts, t: 0, big: true });
+    checkOrders(lv + 1, far.x, far.y);
+  }
+  if (score > best) best = score;
+}
+
+function zigzag(a, b, amp) {
+  const n = 9;
+  ctx.beginPath(); ctx.moveTo(a.x, a.y);
+  for (let i = 1; i < n; i++) {
+    const t = i / n, nx = -(b.y - a.y), ny = b.x - a.x, l = Math.hypot(nx, ny) || 1;
+    const o = (Math.random() - .5) * amp;
+    ctx.lineTo(a.x + (b.x - a.x) * t + nx / l * o, a.y + (b.y - a.y) * t + ny / l * o);
+  }
+  ctx.lineTo(b.x, b.y); ctx.stroke();
+}
+
+function drawBolts() {
+  for (const bl of bolts) {
+    const a = Math.max(0, 1 - bl.t / .7);
+    const P = q => proj(q.x, q.y, q.z);
+    const to = P(bl.to), src = P(bl.src);
+    ctx.save(); ctx.globalAlpha = a; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const pass of [[9, 'rgba(79,195,247,0.45)'], [3.5, '#e1f5fe'], [1.5, '#ffffff']]) {
+      ctx.lineWidth = pass[0]; ctx.strokeStyle = pass[1];
+      for (const q of bl.pts) {
+        const pq = P(q);
+        zigzag(src, pq, 18);
+        zigzag(pq, to, 22);
+      }
+    }
+    ctx.restore();
+  }
+}
+
+function drawOrb(px, py, r, alpha = 1) {
+  const b = proj(px, py), c = proj(px, py, r * 1.1);
+  const rr = r * b.k;
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = 'rgba(30,60,90,0.18)';
+  ctx.beginPath(); ctx.ellipse(b.x, b.y, rr, rr * .45, 0, 0, Math.PI * 2); ctx.fill();
+  const g = ctx.createRadialGradient(c.x - rr * .3, c.y - rr * .3, rr * .1, c.x, c.y, rr * 1.4);
+  g.addColorStop(0, '#ffffff'); g.addColorStop(.35, '#fff59d'); g.addColorStop(.7, '#4fc3f7'); g.addColorStop(1, 'rgba(79,195,247,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c.x, c.y, rr * 1.4, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5;
+  for (let i = 0; i < 3; i++) {
+    const a0 = time * 6 + i * 2.1;
+    zigzag({ x: c.x, y: c.y }, { x: c.x + Math.cos(a0) * rr * 1.5, y: c.y + Math.sin(a0) * rr * 1.5 }, 6);
+  }
+  ctx.font = `${Math.round(rr * 1.1)}px ${emojiFont}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('⚡', c.x, c.y);
+  ctx.globalAlpha = 1;
+}
+
+function drawPowerButton() {
+  const { x, y, r } = POWER_BTN;
+  const on = powerups > 0;
+  if (armed) {
+    ctx.fillStyle = `rgba(255,235,59,${0.35 + 0.25 * Math.sin(time * 8)})`;
+    ctx.beginPath(); ctx.arc(x, y, r + 8, 0, Math.PI * 2); ctx.fill();
+  }
+  const g = ctx.createRadialGradient(x - 6, y - 6, 3, x, y, r);
+  g.addColorStop(0, on ? '#fff59d' : '#eeeeee'); g.addColorStop(1, on ? '#29b6f6' : '#9e9e9e');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = '#fff'; ctx.stroke();
+  ctx.globalAlpha = on ? 1 : .45;
+  ctx.font = `26px ${emojiFont}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('⚡', x, y + 1);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = on ? '#e53935' : '#757575';
+  ctx.beginPath(); ctx.arc(x + r * .75, y - r * .75, 10, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 13px sans-serif';
+  ctx.fillText(powerups, x + r * .75, y - r * .75 + 1);
+  if (armed) {
+    ctx.font = 'bold 13px sans-serif'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.textAlign = 'left';
+    ctx.strokeText('Strzel w napój!', x + r + 8, y); ctx.fillStyle = '#fff59d'; ctx.fillText('Strzel w napój!', x + r + 8, y);
+  }
 }
 
 function burst(x, y, color, n) {
@@ -278,7 +428,7 @@ function burst(x, y, color, n) {
 let settledFor = 0;
 function checkGameOver(dt) {
   if (gameOver) return;
-  if (!items.every(i => Math.hypot(i.vx, i.vy) < 6) || time - lastShot < 0.8) { settledFor = 0; return; }
+  if (orb || !items.every(i => Math.hypot(i.vx, i.vy) < 6) || time - lastShot < 0.8) { settledFor = 0; return; }
   settledFor += dt;
   if (settledFor < 0.3) return;
   if (items.some(i => i.y > T.line)) {
@@ -751,9 +901,11 @@ function render(dt) {
   drawAim();
   // obiekty od najdalszych do najbliższych (malarski algorytm)
   const list = items.map(it => ({ lv: it.lv, x: it.x, y: it.y, it }));
-  if (!gameOver) list.push({ lv: current, x: clampAim(aimX), y: T.launchY, launcher: true });
+  if (!gameOver) list.push({ lv: current, x: clampAim(aimX), y: T.launchY, launcher: true, orb: armed });
+  if (orb) list.push({ x: orb.x, y: orb.y, orb: true });
   list.sort((a, b) => a.y - b.y);
   for (const o of list) {
+    if (o.orb) { drawOrb(o.x, o.y, 20, o.launcher && !canShoot() ? 0.5 : 1); continue; }
     let s = 1;
     if (o.it && o.it.pop > 0) { s = 1 + 0.25 * Math.sin(o.it.pop * Math.PI); o.it.pop = Math.max(0, o.it.pop - dt * 3); }
     drawItem(o.lv, o.x, o.y, s, o.launcher && !canShoot() ? 0.5 : 1);
@@ -765,11 +917,15 @@ function render(dt) {
     ctx.beginPath(); ctx.arc(q.x, q.y, p.size * q.k * 1.6, 0, Math.PI * 2); ctx.fill();
   }
   ctx.globalAlpha = 1;
+  drawBolts();
+  if (flash > 0) {
+    ctx.fillStyle = `rgba(225,245,254,${flash * 0.45})`; ctx.fillRect(0, 0, W, H);
+  }
   for (const f of floaters) {
     if (f.t < 0) continue;
-    const q = proj(f.x, f.y, 90);
+    const q = proj(f.x, f.y, 90 - (f.dy || 0));
     ctx.globalAlpha = Math.max(0, 1 - f.t / 1.1);
-    ctx.font = `bold ${f.big ? 22 : 20}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `bold ${f.huge ? 30 : f.big ? 22 : 20}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.lineWidth = 4; ctx.strokeStyle = '#5d4037';
     ctx.strokeText(f.text, q.x, q.y - f.t * 50);
     ctx.fillStyle = f.big ? '#ffd54f' : '#fff';
@@ -777,6 +933,7 @@ function render(dt) {
   }
   ctx.globalAlpha = 1;
   drawHUD();
+  drawPowerButton();
   drawEvolution();
 }
 
@@ -792,6 +949,9 @@ function frame(now) {
   }
   particles = particles.filter(p => p.t < p.life);
   for (const f of floaters) f.t += dt;
+  for (const b of bolts) b.t += dt;
+  bolts = bolts.filter(b => b.t < .7);
+  flash = Math.max(0, flash - dt * 2.5);
   floaters = floaters.filter(f => f.t < 1.1);
   checkGameOver(dt);
   saveTimer += dt;

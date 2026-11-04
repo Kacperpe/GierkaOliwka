@@ -11,6 +11,10 @@ Gra na Androida: celujesz napojem, strzelasz w górę stołu, a dwa takie same n
 - Dwa obiekty lv10 znikają za 1024 pkt.
 - **Zamówienia** u góry: stworzenie zamówionego napoju daje bonus (5× wartość poziomu).
 - Koniec gry, gdy po strzale jakiś obiekt zatrzyma się poniżej przerywanej linii.
+- Napoje są przyciągane w stronę dalekiego końca stołu (grawitacja na północ).
+- **Combo**: kolejne połączenia z jednego strzału liczą się jako Combo x2, x3…
+- **⚡ Piorun (power-up)**: więcej niż 3 połączenia w jednym strzale dają piorun. Stuknij ⚡ (lewy górny róg), potem strzel w napój —
+  wszystkie napoje tego rodzaju łączą się błyskawicą w jeden poziom wyżej, w miejscu najdalszego z nich. Pudło = piorun wraca.
 - Rekord i stan gry zapisują się automatycznie.
 
 ## Aktualizacje
