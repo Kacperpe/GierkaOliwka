@@ -304,24 +304,63 @@ const Meta = (() => {
     setTimeout(() => toast('🎯 Misje: ' + run.missions.map(m => m.text).join(' · ')), 2000);
   }
 
+  function tbar(title, right = '') {
+    return `<div class="tbar"><button class="back">‹</button><div class="plank">${title}</div>${right || '<i class="tsp"></i>'}</div>`;
+  }
+  const coinChip = () => `<div class="chip coin"><span class="cicon"></span>${fmt(P.coins)}</div>`;
+
   function pause() {
     paused = true; aiming = false; saveGame();
     stack = ['pause'];
     const el = $('pause');
-    el.innerHTML = `<h2>Pauza</h2><div class="missions">${missionsHtml()}</div><div class="list"></div>`;
-    const L = el.querySelector('.list');
-    L.append(
-      btn('▶ Wznów', resume, 'primary'),
-      btn('🔄 Od nowa', () => newRun({ mode: run.mode || mode, seed: mode === 'daily' ? dailySeed() : undefined, target: run.target })),
-      btn('🏠 Menu', openMenu),
+    el.innerHTML = `<div class="pcard">
+      <div class="plank big">Pauza</div>
+      <div class="pinfo"><span>${MODES[mode].name}</span><b>${fmt(score)} pkt</b></div>
+      <div class="mlist">${missionsHtml()}</div>
+      <div class="pbtns"></div></div>`;
+    const B = el.querySelector('.pbtns');
+    B.append(
+      btn('<b>▶ Wznów</b>', resume, 'bplay'),
+      btn('🔄 Od nowa', () => newRun({ mode: run.mode || mode, seed: mode === 'daily' ? dailySeed() : undefined, target: run.target }), 'bsoft'),
+      btn('🏠 Menu', openMenu, 'bsoft'),
     );
     show('pause'); Sfx.click();
   }
   function resume() { hideAll(); if (runActive && !gameOver) { paused = false; last = performance.now(); } }
 
   function missionsHtml() {
-    return run.missions.map(m => `<div class="mis ${m.done ? 'done' : ''}">
-      <span>${m.done ? '✅' : '⬜'} ${m.text}</span><em>${m.k === 'score' ? fmt(m.prog) + '/' + fmt(m.need) : m.prog + '/' + m.need} · ${m.reward}💰</em></div>`).join('');
+    if (!run.missions.length) return '';
+    return '<div class="mhead">🎯 Misje</div>' + run.missions.map(m => {
+      const pr = Math.min(100, m.prog / m.need * 100);
+      const num = m.k === 'score' ? fmt(m.prog) + ' / ' + fmt(m.need) : m.prog + ' / ' + m.need;
+      return `<div class="mis ${m.done ? 'done' : ''}">
+        <span class="mck">${m.done ? '✓' : ''}</span>
+        <div class="mtx"><span>${m.text}</span><div class="mbar"><i style="width:${pr}%"></i></div><small>${num}</small></div>
+        <span class="mrw"><span class="cicon"></span>${m.reward}</span></div>`;
+    }).join('');
+  }
+
+  function confetti(el) {
+    const box = document.createElement('div'); box.className = 'confetti';
+    const cols = ['#ff5252', '#ffca28', '#69f0ae', '#40c4ff', '#e040fb', '#ff9100'];
+    for (let i = 0; i < 46; i++) {
+      const c = document.createElement('i');
+      c.style.cssText = `left:${Math.random() * 100}%;background:${cols[i % cols.length]};animation-delay:${Math.random() * 1.2}s;` +
+        `animation-duration:${2.2 + Math.random() * 1.8}s;--dx:${(Math.random() - .5) * 120}px;--r:${(Math.random() * 720 - 360) | 0}deg;` +
+        `width:${6 + Math.random() * 6}px;height:${8 + Math.random() * 8}px;border-radius:${Math.random() < .3 ? '50%' : '2px'}`;
+      box.appendChild(c);
+    }
+    el.appendChild(box);
+  }
+
+  function countUp(node, to) {
+    const t0 = performance.now(), dur = Math.min(1400, 400 + to / 10);
+    const stepF = n => {
+      const k = Math.min(1, (n - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      node.textContent = fmt(to * e);
+      if (k < 1) requestAnimationFrame(stepF); else node.classList.add('done');
+    };
+    requestAnimationFrame(stepF);
   }
 
   function onGameEnd(info) {
@@ -346,27 +385,33 @@ const Meta = (() => {
     if (P.level >= 10) setTimeout(() => unlockSecret('level10'), 600);
 
     const el = $('results');
-    const need = xpNeed(P.level);
+    const need = xpNeed(P.level), pct = Math.min(100, P.xp / need * 100);
     let extra = '';
     if (info.target) extra = info.score > info.target
-      ? `<p class="win">🏆 Pobity cel ${fmt(info.target)}!</p>` : `<p>Cel: ${fmt(info.target)} — zabrakło ${fmt(info.target - info.score)}</p>`;
-    if (m === 'daily') extra += `<p>Najlepszy dziś: <b>${fmt(P.daily.best)}</b></p>`;
-    el.innerHTML = `<h2>${info.title}</h2>
-      <div class="score">${fmt(info.score)}</div>
-      ${isRecord && info.score > 0 ? '<div class="rec">🎉 Nowy rekord!</div>' : `<p>Rekord: ${fmt(P.best[m] || 0)}</p>`}
+      ? `<div class="rnote win">🏆 Pobity cel ${fmt(info.target)}!</div>` : `<div class="rnote">🎯 Cel ${fmt(info.target)} — zabrakło ${fmt(info.target - info.score)}</div>`;
+    if (m === 'daily') extra += `<div class="rnote">📅 Najlepszy dziś: <b>${fmt(P.daily.best)}</b></div>`;
+    const rec = isRecord && info.score > 0;
+    el.innerHTML = `<div class="pcard">
+      <div class="plank big">${info.title}</div>
+      <div class="rmode">${MODES[m].name}</div>
+      <div class="rscore">0</div>
+      ${rec ? '<div class="ribbon">🎉 Nowy rekord!</div>' : `<div class="rnote">Rekord: <b>${fmt(P.best[m] || 0)}</b></div>`}
       ${extra}
-      <div class="gain"><span>💰 +${coins + run.coinsFromMissions}</span><span>⭐ +${fmt(xp)} XP</span></div>
-      <div class="lvl wide"><span>Poz. ${P.level}${P.level > oldLevel ? ' ⬆️' : ''}</span><div class="bar"><i style="width:${Math.min(100, P.xp / need * 100)}%"></i></div></div>
-      <div class="missions">${missionsHtml()}</div>
-      <div class="list"></div>`;
-    const L = el.querySelector('.list');
-    L.append(
-      btn('🔄 Jeszcze raz', () => newRun({ mode: run.mode || m, seed: m === 'daily' ? dailySeed() : (m === 'challenge' ? run.seed : undefined), target: run.target }), 'primary'),
-      btn('📣 Wyzwij kogoś', () => shareChallenge(info)),
-      btn('🏠 Menu', openMenu),
+      <div class="rgain"><div class="chip coin"><span class="cicon"></span>+${fmt(coins + run.coinsFromMissions)}</div><div class="chip xp">⭐ +${fmt(xp)} XP</div></div>
+      <div class="rlvl"><div class="lvbadge" style="--p:${pct}"><b>${P.level}</b></div>
+        <div><span>Poziom ${P.level}${P.level > oldLevel ? ' <em>⬆ awans!</em>' : ''}</span><div class="bar"><i style="width:${pct}%"></i></div><small>${fmt(P.xp)} / ${fmt(need)} XP</small></div></div>
+      <div class="mlist">${missionsHtml()}</div>
+      <div class="pbtns"></div></div>`;
+    const B = el.querySelector('.pbtns');
+    B.append(
+      btn('<b>🔄 Jeszcze raz</b>', () => newRun({ mode: run.mode || m, seed: m === 'daily' ? dailySeed() : (m === 'challenge' ? run.seed : undefined), target: run.target }), 'bplay'),
+      btn('📣 Wyzwij', () => shareChallenge(info), 'bsoft'),
+      btn('🏠 Menu', openMenu, 'bsoft'),
     );
     stack = ['results']; show('results');
-    if (P.level > oldLevel) setTimeout(() => { toast(`⬆️ Poziom ${P.level}! <b>+${100 * (P.level - oldLevel)} 💰</b>`); Sfx.levelup(); }, 500);
+    countUp(el.querySelector('.rscore'), info.score);
+    if (rec) { confetti(el); setTimeout(() => Sfx.levelup(), 300); }
+    if (P.level > oldLevel) setTimeout(() => { toast(`⬆️ Poziom ${P.level}! <b>+${100 * (P.level - oldLevel)} 💰</b>`); Sfx.levelup(); }, 900);
   }
 
   // ---------- kody wyzwań ----------
@@ -405,25 +450,37 @@ const Meta = (() => {
   // ---------- kolekcja ----------
   function renderAlbum() {
     const el = $('album');
-    el.innerHTML = `<div class="top"><button class="back">←</button><h2>Kolekcja</h2></div>
-      <p class="sub">${P.found.length}/${MAX_LV} napojów · ${P.secrets.length}/${(CFG.secrets || []).length} sekretów</p><div class="cards"></div>`;
+    const ns = (CFG.secrets || []).length;
+    el.innerHTML = `${tbar('Kolekcja')}
+      <div class="aprog"><div><b>${P.found.length}</b>/${MAX_LV} napojów</div><div class="bar"><i style="width:${P.found.length / MAX_LV * 100}%"></i></div>
+        <div><b>${P.secrets.length}</b>/${ns} sekretów</div></div>
+      <div class="agrid"></div><div class="plank small">Sekrety</div><div class="slist"></div>`;
     el.querySelector('.back').onclick = back;
-    const C = el.querySelector('.cards');
+    const C = el.querySelector('.agrid');
     for (let lv = 1; lv <= MAX_LV; lv++) {
-      const has = P.found.includes(lv);
-      const d = document.createElement('div'); d.className = 'acard' + (has ? '' : ' locked');
-      d.appendChild(iconCanvas(lv, 64, has ? 1 : .15));
-      const t = document.createElement('div');
-      t.innerHTML = has ? `<b>${LEVELS[lv - 1].name}</b><small>${DESC[lv - 1]}</small><em>Poziom ${lv} · ${mergePoints(lv)} pkt za parę</em>`
-        : `<b>???</b><small>Połącz dwa napoje poziomu ${lv - 1}, żeby odkryć.</small>`;
-      d.appendChild(t); C.appendChild(d);
+      const has = P.found.includes(lv), L = LEVELS[lv - 1];
+      const d = document.createElement('div'); d.className = 'acard2' + (has ? '' : ' locked');
+      d.style.setProperty('--c1', L.liq[0]); d.style.setProperty('--c2', L.liq[L.liq.length - 1]);
+      const ic = document.createElement('div'); ic.className = 'aic';
+      ic.appendChild(iconCanvas(lv, 70, has ? 1 : .9));
+      if (!has) ic.insertAdjacentHTML('beforeend', '<span>?</span>');
+      d.appendChild(ic);
+      d.insertAdjacentHTML('beforeend', `<span class="alv">${lv}</span><b>${has ? L.name : '???'}</b><small>${has ? mergePoints(lv) + ' pkt za parę' : 'połącz 2× poz. ' + (lv - 1)}</small>`);
+      if (has) d.onclick = () => {
+        Sfx.click();
+        modal('<div class="micon"></div>' + `<h2>${L.name}</h2><p class="msg">${DESC[lv - 1]}</p><p class="mstat">Poziom ${lv} · ${mergePoints(lv)} pkt za połączenie pary</p>`,
+          [{ t: 'Zamknij', f: closeModal }]);
+        document.querySelector('#modal .micon').appendChild(iconCanvas(lv, 130));
+      };
+      C.appendChild(d);
     }
+    const S = el.querySelector('.slist');
     for (const sc of CFG.secrets || []) {
       const has = P.secrets.includes(sc.id);
-      const d = document.createElement('div'); d.className = 'acard secret' + (has ? '' : ' locked');
-      d.innerHTML = `<div class="sic">${has ? '🎁' : '🔒'}</div><div><b>${has ? sc.title : 'Sekret'}</b><small>${has ? sc.message : sc.how}</small></div>`;
+      const d = document.createElement('div'); d.className = 'scard' + (has ? '' : ' locked');
+      d.innerHTML = `<div class="sic">${has ? '🎁' : '🔒'}</div><div><b>${has ? sc.title : 'Sekret'}</b><small>${has ? 'Dotknij, żeby przeczytać' : sc.how}</small></div>`;
       if (has) d.onclick = () => modal(`<div class="big">🎁</div><h2>${sc.title}</h2><p class="msg">${sc.message}</p>`, [{ t: 'Zamknij', f: closeModal }]);
-      C.appendChild(d);
+      S.appendChild(d);
     }
   }
 
@@ -431,33 +488,43 @@ const Meta = (() => {
   function preview(item) {
     if (item.cat === 'bg') {
       const B = BGS[item.id];
-      return `background:linear-gradient(${B.sky[0]} 0%,${B.sky[1]} 35%,${B.sea[1]} 55%,${B.sand[0]} 70%,${B.sand[1]} 100%)`;
+      const orb = B.orb === 'moon' ? '#fffde7' : B.orb === 'sunset' ? '#ffb74d' : '#fff59d';
+      return `background:radial-gradient(circle at 28% 30%, ${orb} 0 9%, transparent 10%),` +
+        `linear-gradient(${B.sky[0]} 0%,${B.sky[1]} 38%,${B.sky[2]} 50%,${B.sea[0]} 51%,${B.sea[2]} 66%,${B.sand[0]} 67%,${B.sand[1]} 100%)`;
     }
     const T = TABLES[item.id];
-    return `background:radial-gradient(ellipse at 50% 45%,${T.top[1]} 0%,${T.top[0]} 45%,${T.inner} 50%,${T.frame[0]} 56%,${T.frame[1]} 100%)`;
+    return `background:linear-gradient(${T.top[0]},${T.top[1]});border:7px solid ${T.frame[0]};outline:3px solid ${T.inner};outline-offset:-10px;` +
+      `${T.glow ? `box-shadow:0 0 12px ${T.rim}, inset 0 0 10px ${T.inner};` : ''}`;
   }
+  let shopTab = 'table';
   function renderShop() {
     const el = $('shop');
-    el.innerHTML = `<div class="top"><button class="back">←</button><h2>Sklep</h2><div class="pill">💰 ${fmt(P.coins)}</div></div>
-      <h3>Stoły</h3><div class="shop" data-cat="table"></div><h3>Tła</h3><div class="shop" data-cat="bg"></div>`;
+    el.innerHTML = `${tbar('Sklep', coinChip())}
+      <div class="seg"><button data-t="table">🪑 Stoły</button><button data-t="bg">🏝️ Tła</button></div>
+      <div class="sgrid"></div>`;
     el.querySelector('.back').onclick = back;
-    for (const it of SHOP) {
+    el.querySelectorAll('.seg button').forEach(b => {
+      if (b.dataset.t === shopTab) b.classList.add('on');
+      b.onclick = () => { Sfx.click(); shopTab = b.dataset.t; renderShop(); };
+    });
+    const G = el.querySelector('.sgrid');
+    for (const it of SHOP.filter(x => x.cat === shopTab)) {
       const own = P.owned[it.cat].includes(it.id), sel = P.sel[it.cat] === it.id;
-      const locked = it.lvl && P.level < it.lvl;
+      const locked = !own && it.lvl && P.level < it.lvl;
       const name = (it.cat === 'bg' ? BGS : TABLES)[it.id].name;
-      const d = document.createElement('div'); d.className = 'sitem' + (sel ? ' sel' : '');
-      d.innerHTML = `<div class="prev" style="${preview(it)}"></div><b>${name}</b>`;
-      let label = sel ? '✔ Wybrany' : own ? 'Wybierz' : locked ? `🔒 Poz. ${it.lvl}` : `💰 ${fmt(it.price)}`;
+      const d = document.createElement('div'); d.className = 'sitem2' + (sel ? ' sel' : '') + (locked ? ' locked' : '');
+      d.innerHTML = `<div class="prev2 ${it.cat}"><div style="${preview(it)}"></div>${sel ? '<span class="tag">Wybrany</span>' : own ? '<span class="tag own">✓</span>' : ''}${locked ? `<span class="lock">🔒<small>poziom ${it.lvl}</small></span>` : ''}</div><b>${name}</b>`;
+      const label = sel ? 'W użyciu' : own ? 'Wybierz' : locked ? `Poziom ${it.lvl}` : `<span class="cicon"></span>${fmt(it.price)}`;
       const b = btn(label, () => {
         if (sel) return;
-        if (own) { P.sel[it.cat] = it.id; }
+        if (own) { P.sel[it.cat] = it.id; Sfx.swap(); }
         else if (locked) { toast(`Odblokujesz na poziomie ${it.lvl}`); return; }
         else if (P.coins < it.price) { toast(`Brakuje ${fmt(it.price - P.coins)} 💰`); return; }
-        else { P.coins -= it.price; P.owned[it.cat].push(it.id); P.sel[it.cat] = it.id; Sfx.coin(); toast(`Kupiono: ${name}!`); }
+        else { P.coins -= it.price; P.owned[it.cat].push(it.id); P.sel[it.cat] = it.id; Sfx.coin(); toast(`Kupiono: ${name}! 🎉`); }
         saveProfile(); applyTheme(); renderShop();
-      }, own || sel ? '' : 'buy');
+      }, sel ? 'sused' : own ? 'sown' : locked ? 'slock' : 'sbuy');
       d.appendChild(b);
-      el.querySelector(`[data-cat="${it.cat}"]`).appendChild(d);
+      G.appendChild(d);
     }
   }
   function applyTheme() {
@@ -470,35 +537,42 @@ const Meta = (() => {
   function renderScores() {
     const el = $('scores');
     const tabs = [['classic', 'Klasyczny'], ['daily', 'Dnia'], ['time', 'Na czas'], ['challenge', 'Wyzwania'], ['zen', 'Zen']];
-    el.innerHTML = `<div class="top"><button class="back">←</button><h2>Wyniki</h2></div><div class="tabs"></div><ol class="board"></ol>
-      <p class="sub">Gra ${P.stats.games} razy · ${fmt(P.stats.merges)} połączeń · ${fmt(P.stats.orders)} zamówień</p>`;
+    el.innerHTML = `${tbar('Wyniki')}<div class="tabs2"></div><div class="podium"></div><ol class="board2"></ol>
+      <div class="stats"><div><b>${fmt(P.stats.games)}</b><small>gier</small></div><div><b>${fmt(P.stats.merges)}</b><small>połączeń</small></div><div><b>${fmt(P.stats.orders)}</b><small>zamówień</small></div></div>`;
     el.querySelector('.back').onclick = back;
-    const T = el.querySelector('.tabs');
-    for (const [k, n] of tabs) {
-      const b = btn(n, () => { scoreTab = k; renderScores(); }, scoreTab === k ? 'on' : '');
-      T.appendChild(b);
-    }
+    const T = el.querySelector('.tabs2');
+    for (const [k, n] of tabs) T.appendChild(btn(n, () => { scoreTab = k; renderScores(); }, scoreTab === k ? 'on' : ''));
     const list = P.scores[scoreTab] || [];
-    el.querySelector('.board').innerHTML = list.length
-      ? list.map((r, i) => `<li><span>${['🥇', '🥈', '🥉'][i] || (i + 1) + '.'} ${escapeHtml(r.n)}</span><b>${fmt(r.s)}</b><small>${r.d}</small></li>`).join('')
-      : '<li class="empty">Jeszcze brak wyników — zagraj!</li>';
+    const pod = el.querySelector('.podium');
+    if (!list.length) { pod.innerHTML = '<div class="empty">🍹<br>Jeszcze brak wyników — zagraj!</div>'; return; }
+    pod.innerHTML = [1, 0, 2].map(i => list[i] ? `<div class="pod p${i + 1}"><span class="medal">${['🥇', '🥈', '🥉'][i]}</span>
+      <b>${escapeHtml(list[i].n)}</b><em>${fmt(list[i].s)}</em><div class="step">${i + 1}</div></div>` : '<div class="pod empty"></div>').join('');
+    el.querySelector('.board2').innerHTML = list.slice(3).map((r, i) =>
+      `<li><span class="rk">${i + 4}</span><span class="nm">${escapeHtml(r.n)}<small>${r.d}</small></span><b>${fmt(r.s)}</b></li>`).join('');
   }
   const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   // ---------- ustawienia ----------
+  function toggleRow(icon, label, on, f) {
+    const b = btn(`<span class="ti">${icon}</span><span class="tl">${label}</span><span class="sw ${on ? 'on' : ''}"><i></i></span>`, f, 'trow');
+    return b;
+  }
   function renderSettings() {
     const el = $('settings');
-    el.innerHTML = `<div class="top"><button class="back">←</button><h2>Opcje</h2></div>
-      <label class="row">Imię w wynikach <input id="nameIn" maxlength="14" value="${escapeHtml(P.name)}"></label>
-      <div class="list"></div>
-      <p class="sub">Monety: ${fmt(P.coins)} · Poziom ${P.level} · Seria ${P.streak} dni</p>`;
-    el.querySelector('.back').onclick = () => { P.name = $('nameIn').value.trim() || 'Ty'; saveProfile(); back(); };
-    $('nameIn').onchange = () => { P.name = $('nameIn').value.trim() || 'Ty'; saveProfile(); };
-    const L = el.querySelector('.list');
-    L.append(
-      btn(`🔊 Dźwięk: <b>${P.sound ? 'włączony' : 'wyłączony'}</b>`, () => { P.sound = !P.sound; Sfx.enabled = P.sound; saveProfile(); renderSettings(); }),
-      btn(`📳 Wibracje: <b>${P.vibe ? 'włączone' : 'wyłączone'}</b>`, () => { P.vibe = !P.vibe; vibeEnabled = P.vibe; if (P.vibe) haptic(40); saveProfile(); renderSettings(); }),
-      btn('❓ Jak grać', howTo),
+    el.innerHTML = `${tbar('Opcje')}
+      <div class="panel"><label class="lab">👤 Imię w wynikach</label><input id="nameIn" maxlength="14" value="${escapeHtml(P.name)}"></div>
+      <div class="panel tl2"></div>
+      <div class="panel"><div class="pstats">
+        <div><span class="cicon"></span><b>${fmt(P.coins)}</b><small>monet</small></div>
+        <div>⭐<b>${P.level}</b><small>poziom</small></div>
+        <div>🔥<b>${P.streak}</b><small>seria dni</small></div></div></div>`;
+    const saveName = () => { P.name = $('nameIn').value.trim() || 'Ty'; saveProfile(); };
+    el.querySelector('.back').onclick = () => { saveName(); back(); };
+    $('nameIn').onchange = saveName;
+    el.querySelector('.tl2').append(
+      toggleRow('🔊', 'Dźwięk', P.sound, () => { P.sound = !P.sound; Sfx.enabled = P.sound; saveProfile(); renderSettings(); }),
+      toggleRow('📳', 'Wibracje', P.vibe, () => { P.vibe = !P.vibe; vibeEnabled = P.vibe; if (P.vibe) haptic(40); saveProfile(); renderSettings(); }),
+      btn('<span class="ti">❓</span><span class="tl">Jak grać</span><span class="chev">›</span>', howTo, 'trow'),
     );
   }
   function howTo() {
