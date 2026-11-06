@@ -13,8 +13,15 @@ Gra na Androida: celujesz napojem, strzelasz w górę stołu, a dwa takie same n
 - Koniec gry, gdy po strzale jakiś obiekt zatrzyma się poniżej przerywanej linii.
 - Napoje są przyciągane w stronę dalekiego końca stołu (grawitacja na północ).
 - **Combo**: kolejne połączenia z jednego strzału liczą się jako Combo x2, x3…
-- **⚡ Piorun (power-up)**: więcej niż 3 połączenia w jednym strzale dają piorun. Stuknij ⚡ (lewy górny róg), potem strzel w napój —
-  wszystkie napoje tego rodzaju łączą się błyskawicą w jeden poziom wyżej, w miejscu najdalszego z nich. Pudło = piorun wraca.
+- **Power-upy** (max 3, lewa strona ekranu) — losowy za ponad 3 połączenia w jednym strzale, 30% szans za zamówienie:
+  - ⚡ **Piorun** – strzał w napój łączy wszystkie takie same w jeden poziom wyżej (w miejscu najdalszego)
+  - 💣 **Bomba** – wybuch rozrzuca napoje dookoła
+  - 🌈 **Joker** – łączy się z pierwszym trafionym napojem jak para
+  - ⏫ **Ulepszacz** – trafiony napój +2 poziomy
+  - 🧲 **Magnes** – przez 2,5 s przyciąga do siebie napoje tego samego rodzaju
+  - 🧊 **Lód** – następny strzał bez tarcia, odbija się jak bila
+  - 🔄 **Zamiana** – zamienia aktualny napój z „Następnym” (działa od razu)
+  - 🌊 **Fala** – pcha wszystko w stronę końca stołu (działa od razu)
 - Rekord i stan gry zapisują się automatycznie.
 
 ## Aktualizacje

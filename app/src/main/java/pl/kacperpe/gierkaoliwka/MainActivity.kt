@@ -71,8 +71,11 @@ class MainActivity : Activity() {
         val vc = currentVersionCode()
         if (prefs.getLong("apk_vc", -1) != vc) {
             webDir().deleteRecursively()
-            prefs.edit().putLong("apk_vc", vc).remove("web_sha").apply()
+            prefs.edit().putLong("apk_vc", vc).remove("web_sha").remove("next_sha").apply()
+            nextDir().deleteRecursively()
         }
+
+        applyPendingWeb()
 
         if (savedInstanceState != null) {
             web.restoreState(savedInstanceState)
@@ -80,17 +83,33 @@ class MainActivity : Activity() {
         } else {
             thread {
                 updateWeb()
-                main.post { if (!loaded) loadGame() }
+                main.post { loadGame() }
             }
-            main.postDelayed({ if (!loaded) loadGame() }, START_TIMEOUT_MS)
+            main.postDelayed({ loadGame() }, START_TIMEOUT_MS)
         }
         thread { checkApkUpdate() }
     }
 
     private fun webDir() = File(filesDir, "web")
+    private fun nextDir() = File(filesDir, "web_next")
+
+    /** Wersja pobrana, gdy gra już działała — podmieniamy ją dopiero przy kolejnym starcie. */
+    private fun applyPendingWeb() {
+        val nd = nextDir()
+        val sha = prefs.getString("next_sha", null)
+        if (sha != null && File(nd, "index.html").exists()) {
+            webDir().deleteRecursively()
+            if (nd.renameTo(webDir())) prefs.edit().putString("web_sha", sha).remove("next_sha").apply()
+        } else nd.deleteRecursively()
+    }
 
     private fun loadGame() {
+        if (loaded) return
         loaded = true
+        loadGameNow()
+    }
+
+    private fun loadGameNow() {
         val idx = File(webDir(), "index.html")
         web.loadUrl(if (idx.exists()) "file://${idx.absolutePath}" else "file:///android_asset/index.html")
     }
@@ -118,7 +137,8 @@ class MainActivity : Activity() {
             "application/vnd.github.sha"
         )).trim()
         if (sha.length < 7) throw IOException("bad sha")
-        if (sha == prefs.getString("web_sha", null) && File(webDir(), "index.html").exists()) {
+        if ((sha == prefs.getString("web_sha", null) && File(webDir(), "index.html").exists()) ||
+            sha == prefs.getString("next_sha", null)) {
             false
         } else {
             val base = "https://raw.githubusercontent.com/$OWNER/$REPO/$sha/$WEB_PATH/"
@@ -133,9 +153,24 @@ class MainActivity : Activity() {
                 out.writeBytes(httpGet(base + f))
             }
             if (!File(tmp, "index.html").exists()) throw IOException("no index")
-            webDir().deleteRecursively()
-            if (!tmp.renameTo(webDir())) throw IOException("rename")
-            prefs.edit().putString("web_sha", sha).apply()
+            // jeśli gra już się wczytała (np. wolny internet), nie podmieniamy plików pod działającą grą
+            val swapNow = main.let {
+                val lock = java.util.concurrent.CountDownLatch(1)
+                var free = false
+                it.post { free = !loaded; if (free) loaded = true; lock.countDown() }
+                lock.await()
+                free
+            }
+            if (swapNow) {
+                webDir().deleteRecursively()
+                if (!tmp.renameTo(webDir())) throw IOException("rename")
+                prefs.edit().putString("web_sha", sha).apply()
+                main.post { loadGameNow() }
+            } else {
+                nextDir().deleteRecursively()
+                if (!tmp.renameTo(nextDir())) throw IOException("rename")
+                prefs.edit().putString("next_sha", sha).apply()
+            }
             true
         }
     } catch (e: Exception) {

@@ -86,9 +86,21 @@ let orders = [];
 let gameOver = false, time = 0;
 let maxReached = 1;
 // power-upy
-let powerups = 0, armed = false, orb = null, shotMerges = 0, powerGranted = false;
-let bolts = [], flash = 0;
-const POWER_BTN = { x: 44, y: 128, r: 24 };
+const POWERS = {
+  bolt:    { icon: '⚡', name: 'Piorun',    kind: 'orb',     c: ['#fff59d', '#29b6f6'], hint: 'Strzel w napój — połączy wszystkie takie same' },
+  bomb:    { icon: '💣', name: 'Bomba',     kind: 'orb',     c: ['#ffe0b2', '#e64a19'], hint: 'Strzel — wybuch rozrzuci napoje' },
+  rainbow: { icon: '🌈', name: 'Joker',     kind: 'orb',     c: ['#ffffff', '#ab47bc'], hint: 'Strzel — połączy się z pierwszym trafionym' },
+  up:      { icon: '⏫', name: 'Ulepszacz', kind: 'orb',     c: ['#e8f5e9', '#43a047'], hint: 'Strzel — trafiony napój +2 poziomy' },
+  magnet:  { icon: '🧲', name: 'Magnes',    kind: 'orb',     c: ['#ffebee', '#e53935'], hint: 'Strzel — przyciągnie takie same napoje' },
+  ice:     { icon: '🧊', name: 'Lód',       kind: 'shot',    c: ['#e1f5fe', '#4fc3f7'], hint: 'Następny strzał ślizga się jak bila' },
+  swap:    { icon: '🔄', name: 'Zamiana',   kind: 'instant', c: ['#f3e5f5', '#7e57c2'] },
+  wave:    { icon: '🌊', name: 'Fala',      kind: 'instant', c: ['#e0f7fa', '#0288d1'] },
+};
+const POWER_KEYS = Object.keys(POWERS);
+const MAX_POWER = 3;
+const slotPos = i => ({ x: 40, y: 128 + i * 54, r: 22 });
+let power = [], armed = -1, orb = null, magnet = null, shotMerges = 0, powerGranted = false;
+let bolts = [], rings = [], flash = 0, flashColor = '225,245,254', waveFx = 0;
 
 try { best = +localStorage.getItem('go_best') || 0; } catch (e) {}
 
@@ -117,7 +129,8 @@ function makeItem(lv, x, y, vx = 0, vy = 0) {
 
 function reset() {
   items = []; particles = []; floaters = [];
-  powerups = 0; armed = false; orb = null; bolts = [];
+  power = []; armed = -1; orb = null; magnet = null; bolts = []; rings = []; waveFx = 0;
+  settledFor = 0;
   score = 0; maxReached = 1; gameOver = false; shotItem = null;
   current = rndSpawn(); next = rndSpawn();
   orders = []; orders.push(newOrder()); orders.push(newOrder());
@@ -131,7 +144,7 @@ window.saveGame = function () {
     if (gameOver) { localStorage.removeItem('go_state'); return; }
     localStorage.setItem('go_state', JSON.stringify({
       items: items.map(i => ({ lv: i.lv, x: i.x / TW, y: i.y / TL })),
-      score, current, next, orders, maxReached, powerups,
+      score, current, next, orders, maxReached, power,
     }));
   } catch (e) {}
 };
@@ -146,7 +159,9 @@ function loadGame() {
       it.y = Math.max(it.r, Math.min(TL - it.r, it.y));
       return it;
     });
-    score = s.score; current = s.current; next = s.next; maxReached = s.maxReached || 1; powerups = s.powerups || 0;
+    score = s.score; current = s.current; next = s.next; maxReached = s.maxReached || 1;
+    power = Array.isArray(s.power) ? s.power.filter(k => POWERS[k]).slice(0, MAX_POWER)
+      : Array(Math.min(MAX_POWER, s.powerups || 0)).fill('bolt');
     orders = (s.orders || []).map(o => ({ lv: o.lv, reward: o.reward }));
     while (orders.length < 2) orders.push(newOrder());
     return true;
@@ -168,9 +183,9 @@ cv.addEventListener('pointerdown', e => {
   if (gameOver) return;
   const rc = cv.getBoundingClientRect();
   const sx = (e.clientX - rc.left) / rc.width * W, sy = (e.clientY - rc.top) / rc.height * H;
-  if (Math.hypot(sx - POWER_BTN.x, sy - POWER_BTN.y) < POWER_BTN.r + 8) {
-    if (powerups > 0) armed = !armed;
-    return;
+  for (let i = 0; i < MAX_POWER; i++) {
+    const b = slotPos(i);
+    if (Math.hypot(sx - b.x, sy - b.y) < b.r + 6) { tapPower(i); return; }
   }
   aiming = true; aimX = clampAim(screenToTableX(e));
 });
@@ -191,14 +206,20 @@ function canShoot() {
 function shoot() {
   if (!canShoot()) return;
   shotMerges = 0; powerGranted = false;
-  if (armed && powerups > 0) {
-    powerups--; armed = false;
-    orb = { x: clampAim(aimX), y: T.launchY, vx: 0, vy: -1120, r: 20 };
-    lastShot = time; shotItem = null;
-    return;
+  let ice = false;
+  if (armed >= 0 && power[armed]) {
+    const type = power.splice(armed, 1)[0];
+    armed = -1;
+    if (POWERS[type].kind === 'orb') {
+      orb = { type, x: clampAim(aimX), y: T.launchY, vx: 0, vy: -1120, r: 20 };
+      lastShot = time; shotItem = null;
+      return;
+    }
+    ice = type === 'ice';
   }
-  armed = false;
-  const it = makeItem(current, clampAim(aimX), T.launchY, 0, -1120);
+  armed = -1;
+  const it = makeItem(current, clampAim(aimX), T.launchY, 0, ice ? -1500 : -1120);
+  if (ice) it.ice = 3;
   items.push(it);
   shotItem = it;
   lastShot = time;
@@ -210,26 +231,50 @@ function shoot() {
 const REST_WALL = 0.55, REST_BALL = 0.35;
 const FRICTION_CONST = 260, FRICTION_MUL = 0.9;
 const GRAVITY = 360;   // przyciąganie w stronę dalekiego końca stołu (północ)
-const bounce = v => (Math.abs(v) > 40 ? Math.abs(v) * REST_WALL : 0);
+const bounce = (v, o) => {
+  const e = o && o.ice > 0 ? 0.95 : REST_WALL;
+  return Math.abs(v) > 40 ? Math.abs(v) * e : 0;
+};
 
 function movePhys(o, dt) {
-  o.vy -= GRAVITY * dt;
-  const sp = Math.hypot(o.vx, o.vy);
-  if (sp > 0) {
-    let ns = sp - (FRICTION_CONST + FRICTION_MUL * sp) * dt;
-    if (ns < 0) ns = 0;
-    o.vx *= ns / sp; o.vy *= ns / sp;
+  if (o.ice > 0) {
+    o.ice -= dt;                          // lód: bez tarcia i grawitacji
+  } else {
+    o.vy -= GRAVITY * dt;
+    const sp = Math.hypot(o.vx, o.vy);
+    if (sp > 0) {
+      let ns = sp - (FRICTION_CONST + FRICTION_MUL * sp) * dt;
+      if (ns < 0) ns = 0;
+      o.vx *= ns / sp; o.vy *= ns / sp;
+    }
   }
   o.x += o.vx * dt; o.y += o.vy * dt;
-  if (o.x - o.r < 0)  { o.x = o.r;      o.vx = bounce(o.vx); }
-  if (o.x + o.r > TW) { o.x = TW - o.r; o.vx = -bounce(o.vx); }
+  if (o.x - o.r < 0)  { o.x = o.r;      o.vx = bounce(o.vx, o); }
+  if (o.x + o.r > TW) { o.x = TW - o.r; o.vx = -bounce(o.vx, o); }
+}
+
+function clampY(it) {
+  if (it.y - it.r < 0)  { it.y = it.r;      if (it.vy < 0) it.vy = bounce(it.vy, it); }
+  if (it.y + it.r > TL) { it.y = TL - it.r; if (it.vy > 0) it.vy = -bounce(it.vy, it); }
+}
+function clampAll(it) {
+  if (it.x - it.r < 0)  { it.x = it.r;      if (it.vx < 0) it.vx = 0; }
+  if (it.x + it.r > TW) { it.x = TW - it.r; if (it.vx > 0) it.vx = 0; }
+  clampY(it);
 }
 
 function step(dt) {
   for (const it of items) {
+    it.px = it.x; it.py = it.y;
     movePhys(it, dt);
-    if (it.y - it.r < 0)   { it.y = it.r;      it.vy = bounce(it.vy); }
-    if (it.y + it.r > TL)  { it.y = TL - it.r; it.vy = -bounce(it.vy); }
+    clampY(it);
+  }
+  if (magnet) {
+    for (const it of items) {
+      if (it.lv !== magnet.lv) continue;
+      const dx = magnet.x - it.x, dy = magnet.y - it.y, d = Math.hypot(dx, dy);
+      if (d > 1) { it.vx += dx / d * 1700 * dt; it.vy += dy / d * 1700 * dt; }
+    }
   }
   if (orb) stepOrb(dt);
 
@@ -241,8 +286,10 @@ function step(dt) {
       const b = items[j];
       if (b.dead) continue;
       const dx = b.x - a.x, dy = b.y - a.y;
-      const d = Math.hypot(dx, dy), minD = a.r + b.r;
-      if (d >= minD || d === 0) continue;
+      let d = Math.hypot(dx, dy);
+      const minD = a.r + b.r;
+      if (d >= minD) continue;
+      if (d < 1e-6) { b.x += Math.random() - .5; b.y += .5; continue; }
       if (a.lv === b.lv) { merges.push([a, b]); a.dead = b.dead = true; break; }
       const nx = dx / d, ny = dy / d;
       const ma = a.r * a.r, mb = b.r * b.r;
@@ -259,6 +306,15 @@ function step(dt) {
   }
   for (const [a, b] of merges) doMerge(a, b);
   if (merges.length) items = items.filter(i => !i.dead);
+  // napoje zablokowane w stosie mają prędkość = faktyczny ruch (inaczej grawitacja "pompuje" prędkość
+  // i gra nigdy nie uznaje, że wszystko stoi — blokowało to strzały i koniec gry)
+  for (const it of items) {
+    clampAll(it);
+    if (it.px === undefined) continue;
+    const vx = (it.x - it.px) / dt, vy = (it.y - it.py) / dt;
+    const v = Math.hypot(it.vx, it.vy);
+    if (v < 120 && Math.hypot(vx, vy) < v * 0.6) { it.vx = vx; it.vy = vy; }
+  }
 }
 
 function doMerge(a, b) {
@@ -269,10 +325,7 @@ function doMerge(a, b) {
   burst(x, y, LEVELS[lv - 1].liq[0], 16);
   shotMerges++;
   if (shotMerges >= 2) floaters.push({ x, y, text: 'Combo x' + shotMerges, t: -0.15, big: true, dy: 26 });
-  if (shotMerges > 3 && !powerGranted) {
-    powerGranted = true; powerups++;
-    floaters.push({ x: TW / 2, y: TL * .45, text: '⚡ POWER-UP! ⚡', t: -0.3, big: true, huge: true });
-  }
+  if (shotMerges > 3 && !powerGranted) { powerGranted = true; grantPower(); }
   if (lv >= MAX_LV) {
     floaters.push({ x, y, text: '+' + pts + ' MEGA!', t: 0, big: true });
     burst(x, y, '#ffd54f', 40);
@@ -300,21 +353,105 @@ function checkOrders(lv, x, y) {
       score += orders[k].reward;
       floaters.push({ x, y, text: 'Zamówienie! +' + orders[k].reward, t: -0.25, big: true });
       orders[k] = newOrder(k);
+      if (Math.random() < 0.3) grantPower();
       break;
     }
   }
 }
 
-// ---------- power-up: piorun ----------
+// ---------- power-upy ----------
+function grantPower() {
+  if (power.length >= MAX_POWER) {
+    score += 100;
+    floaters.push({ x: TW / 2, y: TL * .45, text: 'Pełne power-upy: +100', t: -0.3, big: true });
+    return;
+  }
+  const type = POWER_KEYS[Math.floor(Math.random() * POWER_KEYS.length)];
+  power.push(type);
+  floaters.push({ x: TW / 2, y: TL * .45, text: POWERS[type].icon + ' ' + POWERS[type].name + '!', t: -0.3, big: true, huge: true });
+}
+
+function tapPower(i) {
+  const type = power[i];
+  if (!type || gameOver) return;
+  const P = POWERS[type];
+  if (P.kind !== 'instant') { armed = armed === i ? -1 : i; return; }
+  if (orb) return;
+  power.splice(i, 1);
+  if (armed === i) armed = -1; else if (armed > i) armed--;
+  if (type === 'swap') {
+    [current, next] = [next, current];
+    aimX = clampAim(aimX);
+    floaters.push({ x: TW / 2, y: T.launchY - 60, text: '🔄 Zamiana!', t: 0, big: true });
+  } else if (type === 'wave') {
+    for (const it of items) { it.vy -= 620 + Math.random() * 120; it.vx += (Math.random() - .5) * 120; }
+    waveFx = 1;
+    floaters.push({ x: TW / 2, y: T.line - 40, text: '🌊 Fala!', t: 0, big: true });
+  }
+}
+
+function refundOrb() {
+  if (power.length < MAX_POWER) power.unshift(orb.type);
+  floaters.push({ x: orb.x, y: Math.max(40, orb.y), text: 'Pudło — ' + POWERS[orb.type].icon + ' wraca', t: 0 });
+  orb = null;
+}
+
 function stepOrb(dt) {
   movePhys(orb, dt);
   for (const it of items) {
-    if (Math.hypot(it.x - orb.x, it.y - orb.y) < it.r + orb.r) { lightning(it); orb = null; return; }
+    if (it.dead) continue;
+    if (Math.hypot(it.x - orb.x, it.y - orb.y) < it.r + orb.r) {
+      const o = orb; orb = null;
+      hitPower(o, it);
+      return;
+    }
   }
-  if (orb.y - orb.r < 0 || orb.y > TL || Math.hypot(orb.vx, orb.vy) < 15) {
-    floaters.push({ x: orb.x, y: Math.max(40, orb.y), text: 'Pudło — ⚡ wraca', t: 0 });
-    powerups++; orb = null;
+  if (orb.y - orb.r < 0) {
+    if (orb.type === 'bomb') { const o = orb; orb = null; explode(o.x, o.r); }
+    else refundOrb();
+  } else if (Math.hypot(orb.vx, orb.vy) < 15) refundOrb();
+}
+
+function hitPower(o, it) {
+  if (o.type === 'bolt') lightning(it);
+  else if (o.type === 'bomb') explode(o.x, o.y);
+  else if (o.type === 'rainbow') {
+    it.dead = true;
+    doMerge(it, { lv: it.lv, x: it.x, y: it.y, vx: o.vx * .7, vy: o.vy * .7 });
+    items = items.filter(i => !i.dead);
+    burst(it.x, it.y, '#ce93d8', 14); burst(it.x, it.y, '#80deea', 10);
+  } else if (o.type === 'up') {
+    const lv = Math.min(MAX_LV, it.lv + 2);
+    const pts = mergePoints(it.lv) * 2;
+    score += pts;
+    it.dead = true; items = items.filter(i => !i.dead);
+    const n = makeItem(lv, it.x, it.y, o.vx * .2, o.vy * .2);
+    clampAll(n); n.pop = 1; items.push(n);
+    maxReached = Math.max(maxReached, lv);
+    burst(n.x, n.y, '#a5d6a7', 20);
+    floaters.push({ x: n.x, y: n.y, text: '⏫ +' + pts, t: 0, big: true });
+    checkOrders(lv, n.x, n.y);
+  } else if (o.type === 'magnet') {
+    magnet = { lv: it.lv, x: it.x, y: it.y, t: 2.5 };
+    floaters.push({ x: it.x, y: it.y, text: '🧲 Magnes!', t: 0, big: true });
   }
+  if (score > best) best = score;
+}
+
+function explode(x, y) {
+  const R = 150;
+  for (const it of items) {
+    let dx = it.x - x, dy = it.y - y, d = Math.hypot(dx, dy);
+    if (d > R + it.r) continue;
+    if (d < 1) { dx = Math.random() - .5; dy = -1; d = Math.hypot(dx, dy); }
+    const f = 280 + 900 * (1 - d / (R + it.r));
+    it.vx += dx / d * f; it.vy += dy / d * f;
+    it.ice = 0;
+  }
+  rings.push({ x, y, t: 0, R });
+  burst(x, y, '#ff7043', 30); burst(x, y, '#ffd54f', 24); burst(x, y, '#5d4037', 10);
+  flash = 1; flashColor = '255,204,128';
+  floaters.push({ x, y, text: '💥 BUM!', t: 0, big: true, huge: true });
 }
 
 function lightning(hit) {
@@ -325,7 +462,7 @@ function lightning(hit) {
   score += pts;
   bolts.push({ src: { x: hit.x, y: hit.y, z: hit.r }, pts: group.map(g => ({ x: g.x, y: g.y, z: g.r })),
     to: { x: far.x, y: far.y, z: far.r }, t: 0 });
-  flash = 1;
+  flash = 1; flashColor = '225,245,254';
   for (const g of group) { g.dead = true; burst(g.x, g.y, '#fff59d', 10); burst(g.x, g.y, '#4fc3f7', 6); }
   items = items.filter(i => !i.dead);
   if (lv >= MAX_LV) {
@@ -372,48 +509,101 @@ function drawBolts() {
   }
 }
 
-function drawOrb(px, py, r, alpha = 1) {
+function drawOrb(type, px, py, r, alpha = 1) {
+  const P = POWERS[type];
   const b = proj(px, py), c = proj(px, py, r * 1.1);
   const rr = r * b.k;
   ctx.globalAlpha = alpha;
   ctx.fillStyle = 'rgba(30,60,90,0.18)';
   ctx.beginPath(); ctx.ellipse(b.x, b.y, rr, rr * .45, 0, 0, Math.PI * 2); ctx.fill();
   const g = ctx.createRadialGradient(c.x - rr * .3, c.y - rr * .3, rr * .1, c.x, c.y, rr * 1.4);
-  g.addColorStop(0, '#ffffff'); g.addColorStop(.35, '#fff59d'); g.addColorStop(.7, '#4fc3f7'); g.addColorStop(1, 'rgba(79,195,247,0)');
+  g.addColorStop(0, '#ffffff'); g.addColorStop(.35, P.c[0]); g.addColorStop(.7, P.c[1]); g.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c.x, c.y, rr * 1.4, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5;
-  for (let i = 0; i < 3; i++) {
-    const a0 = time * 6 + i * 2.1;
-    zigzag({ x: c.x, y: c.y }, { x: c.x + Math.cos(a0) * rr * 1.5, y: c.y + Math.sin(a0) * rr * 1.5 }, 6);
+  if (type === 'bolt') {
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5;
+    for (let i = 0; i < 3; i++) {
+      const a0 = time * 6 + i * 2.1;
+      zigzag({ x: c.x, y: c.y }, { x: c.x + Math.cos(a0) * rr * 1.5, y: c.y + Math.sin(a0) * rr * 1.5 }, 6);
+    }
+  } else if (type === 'rainbow') {
+    ['#ef5350', '#ffca28', '#66bb6a', '#42a5f5', '#ab47bc'].forEach((col, i) => {
+      ctx.strokeStyle = col; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(c.x, c.y, rr * (1.05 + i * .1), time * 3 + i, time * 3 + i + 2.2); ctx.stroke();
+    });
+  } else if (type === 'bomb') {
+    const sp = 2 + Math.random() * 2;
+    ctx.fillStyle = '#ffeb3b';
+    ctx.beginPath(); ctx.arc(c.x + rr * .55, c.y - rr * .75, sp, 0, Math.PI * 2); ctx.fill();
   }
   ctx.font = `${Math.round(rr * 1.1)}px ${emojiFont}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('⚡', c.x, c.y);
+  ctx.fillText(P.icon, c.x, c.y);
   ctx.globalAlpha = 1;
 }
 
-function drawPowerButton() {
-  const { x, y, r } = POWER_BTN;
-  const on = powerups > 0;
-  if (armed) {
-    ctx.fillStyle = `rgba(255,235,59,${0.35 + 0.25 * Math.sin(time * 8)})`;
-    ctx.beginPath(); ctx.arc(x, y, r + 8, 0, Math.PI * 2); ctx.fill();
+function drawFx() {
+  // fale uderzeniowe bomby
+  for (const rg of rings) {
+    const k = rg.t / .5, R = rg.R * (.3 + k * .9);
+    const c = proj(rg.x, rg.y), e = proj(rg.x, rg.y + R);
+    ctx.strokeStyle = `rgba(255,152,0,${Math.max(0, 1 - k)})`; ctx.lineWidth = 6 * (1 - k) + 1;
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, R * c.k, Math.max(2, e.y - c.y), 0, 0, Math.PI * 2); ctx.stroke();
   }
-  const g = ctx.createRadialGradient(x - 6, y - 6, 3, x, y, r);
-  g.addColorStop(0, on ? '#fff59d' : '#eeeeee'); g.addColorStop(1, on ? '#29b6f6' : '#9e9e9e');
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-  ctx.lineWidth = 3; ctx.strokeStyle = '#fff'; ctx.stroke();
-  ctx.globalAlpha = on ? 1 : .45;
-  ctx.font = `26px ${emojiFont}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('⚡', x, y + 1);
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = on ? '#e53935' : '#757575';
-  ctx.beginPath(); ctx.arc(x + r * .75, y - r * .75, 10, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 13px sans-serif';
-  ctx.fillText(powerups, x + r * .75, y - r * .75 + 1);
-  if (armed) {
-    ctx.font = 'bold 13px sans-serif'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-    ctx.textAlign = 'left';
-    ctx.strokeText('Strzel w napój!', x + r + 8, y); ctx.fillStyle = '#fff59d'; ctx.fillText('Strzel w napój!', x + r + 8, y);
+  // magnes
+  if (magnet) {
+    const c = proj(magnet.x, magnet.y, 10);
+    const pulse = (time * 2) % 1;
+    ctx.strokeStyle = `rgba(229,57,53,${1 - pulse})`; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, 60 * (1 - pulse) * c.k + 6, (60 * (1 - pulse) * c.k + 6) * .5, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(229,57,53,0.35)'; ctx.lineWidth = 2; ctx.setLineDash([6, 6]); ctx.lineDashOffset = time * 30;
+    for (const it of items) if (it.lv === magnet.lv) {
+      const q = proj(it.x, it.y, 10);
+      ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(c.x, c.y); ctx.stroke();
+    }
+    ctx.setLineDash([]); ctx.lineDashOffset = 0;
+  }
+  // fala
+  if (waveFx > 0) {
+    const yy = TL * waveFx;
+    const a = proj(0, yy), b = proj(TW, yy), a2 = proj(0, Math.min(TL, yy + 60)), b2 = proj(TW, Math.min(TL, yy + 60));
+    const g = ctx.createLinearGradient(0, a.y, 0, a2.y);
+    g.addColorStop(0, 'rgba(255,255,255,0.9)'); g.addColorStop(.3, 'rgba(79,195,247,0.6)'); g.addColorStop(1, 'rgba(79,195,247,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y);
+    for (let i = 1; i <= 12; i++) { const x = TW * i / 12; const q = proj(x, yy + Math.sin(i * 1.3 + time * 8) * 6); ctx.lineTo(q.x, q.y); }
+    ctx.lineTo(b2.x, b2.y); ctx.lineTo(a2.x, a2.y); ctx.closePath(); ctx.fill();
+  }
+}
+
+function drawPowerSlots() {
+  for (let i = 0; i < MAX_POWER; i++) {
+    const { x, y, r } = slotPos(i);
+    const type = power[i];
+    if (!type) {
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2; ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]);
+      continue;
+    }
+    const P = POWERS[type];
+    if (armed === i) {
+      ctx.fillStyle = `rgba(255,235,59,${0.4 + 0.25 * Math.sin(time * 8)})`;
+      ctx.beginPath(); ctx.arc(x, y, r + 7, 0, Math.PI * 2); ctx.fill();
+    }
+    const g = ctx.createRadialGradient(x - 6, y - 6, 3, x, y, r);
+    g.addColorStop(0, P.c[0]); g.addColorStop(1, P.c[1]);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = '#fff'; ctx.stroke();
+    ctx.font = `22px ${emojiFont}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(P.icon, x, y + 1);
+  }
+  if (armed >= 0 && power[armed]) {
+    const P = POWERS[power[armed]];
+    const y = T.launchY;
+    const q = proj(TW / 2, y + 40);
+    ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    const txt = P.icon + ' ' + P.hint;
+    ctx.strokeText(txt, W / 2, q.y); ctx.fillStyle = '#fff59d'; ctx.fillText(txt, W / 2, q.y);
   }
 }
 
@@ -425,10 +615,20 @@ function burst(x, y, color, n) {
   }
 }
 
+function updateFx(dt) {
+  for (const b of bolts) b.t += dt;
+  bolts = bolts.filter(b => b.t < .7);
+  for (const r of rings) r.t += dt;
+  rings = rings.filter(r => r.t < .5);
+  flash = Math.max(0, flash - dt * 2.5);
+  waveFx = Math.max(0, waveFx - dt * 1.6);
+  if (magnet && (magnet.t -= dt) <= 0) magnet = null;
+}
+
 let settledFor = 0;
 function checkGameOver(dt) {
   if (gameOver) return;
-  if (orb || !items.every(i => Math.hypot(i.vx, i.vy) < 6) || time - lastShot < 0.8) { settledFor = 0; return; }
+  if (orb || magnet || !items.every(i => Math.hypot(i.vx, i.vy) < 6) || time - lastShot < 0.8) { settledFor = 0; return; }
   settledFor += dt;
   if (settledFor < 0.3) return;
   if (items.some(i => i.y > T.line)) {
@@ -901,11 +1101,19 @@ function render(dt) {
   drawAim();
   // obiekty od najdalszych do najbliższych (malarski algorytm)
   const list = items.map(it => ({ lv: it.lv, x: it.x, y: it.y, it }));
-  if (!gameOver) list.push({ lv: current, x: clampAim(aimX), y: T.launchY, launcher: true, orb: armed });
-  if (orb) list.push({ x: orb.x, y: orb.y, orb: true });
+  const armedType = armed >= 0 ? power[armed] : null;
+  const armedOrb = armedType && POWERS[armedType].kind === 'orb' ? armedType : null;
+  if (!gameOver) list.push({ lv: current, x: clampAim(aimX), y: T.launchY, launcher: true, orb: armedOrb,
+    icy: armedType === 'ice' });
+  if (orb) list.push({ x: orb.x, y: orb.y, orb: orb.type });
   list.sort((a, b) => a.y - b.y);
   for (const o of list) {
-    if (o.orb) { drawOrb(o.x, o.y, 20, o.launcher && !canShoot() ? 0.5 : 1); continue; }
+    if (o.orb) { drawOrb(o.orb, o.x, o.y, 20, o.launcher && !canShoot() ? 0.5 : 1); continue; }
+    if ((o.it && o.it.ice > 0) || o.icy) {
+      const c = proj(o.x, o.y), rr = radius(o.lv) * c.k;
+      ctx.fillStyle = `rgba(129,212,250,${0.35 + 0.15 * Math.sin(time * 10)})`;
+      ctx.beginPath(); ctx.ellipse(c.x, c.y, rr * 1.25, rr * .6, 0, 0, Math.PI * 2); ctx.fill();
+    }
     let s = 1;
     if (o.it && o.it.pop > 0) { s = 1 + 0.25 * Math.sin(o.it.pop * Math.PI); o.it.pop = Math.max(0, o.it.pop - dt * 3); }
     drawItem(o.lv, o.x, o.y, s, o.launcher && !canShoot() ? 0.5 : 1);
@@ -918,8 +1126,9 @@ function render(dt) {
   }
   ctx.globalAlpha = 1;
   drawBolts();
+  drawFx();
   if (flash > 0) {
-    ctx.fillStyle = `rgba(225,245,254,${flash * 0.45})`; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = `rgba(${flashColor},${flash * 0.45})`; ctx.fillRect(0, 0, W, H);
   }
   for (const f of floaters) {
     if (f.t < 0) continue;
@@ -933,7 +1142,7 @@ function render(dt) {
   }
   ctx.globalAlpha = 1;
   drawHUD();
-  drawPowerButton();
+  drawPowerSlots();
   drawEvolution();
 }
 
@@ -949,9 +1158,7 @@ function frame(now) {
   }
   particles = particles.filter(p => p.t < p.life);
   for (const f of floaters) f.t += dt;
-  for (const b of bolts) b.t += dt;
-  bolts = bolts.filter(b => b.t < .7);
-  flash = Math.max(0, flash - dt * 2.5);
+  updateFx(dt);
   floaters = floaters.filter(f => f.t < 1.1);
   checkGameOver(dt);
   saveTimer += dt;
