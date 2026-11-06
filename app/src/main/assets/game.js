@@ -742,7 +742,7 @@ function drawPowerSlots() {
     const P = POWERS[power[armed]];
     const y = T.launchY;
     const q = proj(TW / 2, y + 40);
-    ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = 'bold 14px Fredoka, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.55)';
     const txt = P.icon + ' ' + P.hint;
     ctx.strokeText(txt, W / 2, q.y); ctx.fillStyle = '#fff59d'; ctx.fillText(txt, W / 2, q.y);
@@ -1360,7 +1360,7 @@ function drawRock(r) {
   // mech / muszelka i licznik
   ctx.fillStyle = 'rgba(129,199,132,0.7)';
   ctx.beginPath(); ctx.ellipse(b.x - rr * .2, top.y + rr * .2, rr * .35, rr * .12, -.3, 0, Math.PI * 2); ctx.fill();
-  ctx.font = `bold ${Math.round(Math.max(10, rr * .5))}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `bold ${Math.round(Math.max(10, rr * .5))}px Fredoka, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.5)';
   ctx.strokeText(r.life, b.x, b.y - rr * .45); ctx.fillStyle = '#fff'; ctx.fillText(r.life, b.x, b.y - rr * .45);
 }
@@ -1390,11 +1390,11 @@ function drawHUD() {
   ctx.fillStyle = 'rgba(255,255,255,0.93)';
   roundRect(12, 30, 150, 40, 20); ctx.fill();
   ctx.fillStyle = '#ffc107'; ctx.beginPath(); ctx.arc(32, 50, 15, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#ff8f00'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ff8f00'; ctx.font = 'bold 16px Fredoka, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText('★', 32, 51);
-  ctx.fillStyle = '#4e342e'; ctx.font = 'bold 24px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillStyle = '#4e342e'; ctx.font = 'bold 24px Fredoka, sans-serif'; ctx.textAlign = 'left';
   ctx.fillText(score, 54, 51);
-  ctx.font = 'bold 13px sans-serif'; ctx.fillStyle = '#fff'; ctx.textAlign = 'left';
+  ctx.font = 'bold 13px Fredoka, sans-serif'; ctx.fillStyle = '#fff'; ctx.textAlign = 'left';
   ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 3;
   let sub = 'Rekord: ' + best;
   if (target) sub = (beatTarget ? '🏆 ' : 'Cel: ') + target;
@@ -1411,7 +1411,7 @@ function drawHUD() {
     const tl = Math.ceil(timeLeft), low = timeLeft <= 10;
     ctx.fillStyle = low ? `rgba(229,57,53,${.85 + .15 * Math.sin(time * 10)})` : 'rgba(255,255,255,0.93)';
     roundRect(W / 2 - 34, H - 120, 68, 30, 15); ctx.fill();
-    ctx.fillStyle = low ? '#fff' : '#4e342e'; ctx.font = 'bold 18px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = low ? '#fff' : '#4e342e'; ctx.font = 'bold 18px Fredoka, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('⏱ ' + tl, W / 2, H - 104);
   }
   // pauza
@@ -1424,7 +1424,7 @@ function drawHUD() {
   roundRect(W - 86, 28, 72, 72, 14); ctx.fill();
   ctx.lineWidth = 3; ctx.strokeStyle = '#8bc34a'; ctx.stroke();
   drawIcon(next, W - 50, 64, 50);
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 13px Fredoka, sans-serif'; ctx.textAlign = 'center';
   ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 3;
   ctx.strokeText('Następny', W - 50, 114); ctx.fillText('Następny', W - 50, 114);
 
@@ -1435,12 +1435,12 @@ function drawHUD() {
     ctx.translate(ox + ow / 2, oy); ctx.rotate(k ? 0.04 : -0.03);
     ctx.fillStyle = '#fffdf5'; ctx.shadowColor = 'rgba(0,0,0,0.25)'; ctx.shadowBlur = 6;
     ctx.fillRect(-ow / 2, 0, ow, oh); ctx.shadowBlur = 0;
-    ctx.fillStyle = '#c62828'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#c62828'; ctx.font = 'bold 11px Fredoka, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('Zamówienie', 0, 12);
     ctx.restore();
     drawIcon(o.lv, ox + ow / 2, oy + 48, 44);
     const fast = o.t > o.max / 2;
-    ctx.fillStyle = '#4e342e'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#4e342e'; ctx.font = 'bold 12px Fredoka, sans-serif'; ctx.textAlign = 'center';
     ctx.fillText('★ ' + o.reward * (fast ? 2 : 1), ox + ow / 2, oy + oh - 18);
     // pasek czasu zamówienia
     const fr = Math.max(0, o.t / o.max);
@@ -1532,7 +1532,7 @@ function render(dt) {
     if (f.t < 0) continue;
     const q = proj(f.x, f.y, 90 - (f.dy || 0));
     ctx.globalAlpha = Math.max(0, 1 - f.t / 1.1);
-    ctx.font = `bold ${f.huge ? 30 : f.big ? 22 : 20}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `bold ${f.huge ? 30 : f.big ? 22 : 20}px Fredoka, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.lineWidth = 4; ctx.strokeStyle = '#5d4037';
     ctx.strokeText(f.text, q.x, q.y - f.t * 50);
     ctx.fillStyle = f.big ? '#ffd54f' : '#fff';

@@ -4,3 +4,9 @@ config.js
 audio.js
 meta.js
 game.js
+fonts/fredoka-latin-500-normal.woff2
+fonts/fredoka-latin-600-normal.woff2
+fonts/fredoka-latin-700-normal.woff2
+fonts/fredoka-latin-ext-500-normal.woff2
+fonts/fredoka-latin-ext-600-normal.woff2
+fonts/fredoka-latin-ext-700-normal.woff2

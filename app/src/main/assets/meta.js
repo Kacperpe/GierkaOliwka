@@ -195,23 +195,73 @@ const Meta = (() => {
   }
 
   // ---------- ekrany ----------
+  function card(cls, iconLv, title, sub, f) {
+    const b = document.createElement('button');
+    b.className = 'mcard ' + cls;
+    b.appendChild(iconCanvas(iconLv, 52));
+    const t = document.createElement('div');
+    t.innerHTML = `<b>${title}</b><small>${sub}</small>`;
+    b.appendChild(t);
+    b.onclick = () => { Sfx.click(); f(); };
+    return b;
+  }
+
+  let heroTimer = null;
   function renderMenu() {
     const el = $('menu');
-    el.innerHTML = `${header()}<h1>${CFG.title || 'Gierka Oliwka'}</h1><div class="list"></div><div class="grid4"></div>`;
-    const L = el.querySelector('.list'), G = el.querySelector('.grid4');
-    if (runActive && !gameOver) L.appendChild(btn(`▶ Kontynuuj <small>${MODES[mode].name} · ${fmt(score)} pkt</small>`, resume, 'primary'));
-    L.appendChild(btn('🍹 Graj <small>Klasyczny</small>', () => newRun({ mode: 'classic' }), runActive ? '' : 'primary'));
+    const need = xpNeed(P.level), pct = Math.min(100, P.xp / need * 100);
+    const title = (CFG.title || 'Gierka Oliwka').split(' ');
+    el.innerHTML = `
+      <div class="bubbles">${'<i></i>'.repeat(12)}</div>
+      <div class="mtop">
+        <div class="lvbadge" style="--p:${pct}"><b>${P.level}</b></div>
+        <div class="lvinfo"><span>Poziom ${P.level}</span><div class="bar"><i style="width:${pct}%"></i></div><small>${fmt(P.xp)} / ${fmt(need)} XP</small></div>
+        <div class="chip coin"><span class="cicon"></span>${fmt(P.coins)}</div>
+        <div class="chip fire">🔥 ${P.streak}</div>
+      </div>
+      <div class="sign"><div class="board"><span>${title[0] || ''}</span><span>${title.slice(1).join(' ')}</span></div></div>
+      <div class="hero"><div class="rays"></div><div class="hdrink"></div><div class="hshadow"></div></div>
+      <div class="mmain"></div>
+      <div class="modes"></div>
+      <div class="dock"></div>`;
+    // bohater: najlepszy odkryty napój, zmienia się co kilka sekund
+    const found = P.found.slice().sort((a, b) => b - a);
+    let hi = 0;
+    const H = el.querySelector('.hdrink');
+    const setHero = () => {
+      H.innerHTML = ''; const c = iconCanvas(found[hi % found.length], 132); H.appendChild(c);
+      H.classList.remove('swap'); void H.offsetWidth; H.classList.add('swap'); hi++;
+    };
+    setHero();
+    clearInterval(heroTimer);
+    if (found.length > 1) heroTimer = setInterval(() => { if ($('menu').classList.contains('on')) setHero(); }, 3200);
+
+    const M = el.querySelector('.mmain');
+    if (runActive && !gameOver) {
+      const c = btn(`<span class="tk">▶</span><div><b>Kontynuuj</b><small>${MODES[mode].name} · ${fmt(score)} pkt</small></div>`, resume, 'ticket');
+      M.appendChild(c);
+    }
+    const play = btn(`<div><b>GRAJ</b><small>Klasyczny · rekord ${fmt(P.best.classic || 0)}</small></div>`, () => newRun({ mode: 'classic' }), 'play');
+    play.prepend(iconCanvas(6, 58));
+    M.appendChild(play);
+
     const db = P.daily.date === dayStr() ? P.daily.best : 0;
-    L.appendChild(btn(`📅 Wyzwanie dnia <small>${db ? 'dziś: ' + fmt(db) : 'ten sam układ dla wszystkich'}</small>`, () => newRun({ mode: 'daily', seed: dailySeed() })));
-    L.appendChild(btn(`⏱ Na czas <small>60 s · rekord ${fmt(P.best.time || 0)}</small>`, () => newRun({ mode: 'time' })));
-    L.appendChild(btn('🧘 Zen <small>bez przegranej</small>', () => newRun({ mode: 'zen' })));
-    L.appendChild(btn('🎯 Kod wyzwania <small>pobij czyjś wynik</small>', enterCode));
-    G.append(
-      btn('📖<small>Kolekcja</small>', () => go('album', renderAlbum)),
-      btn('🛍️<small>Sklep</small>', () => go('shop', renderShop)),
-      btn('🏆<small>Wyniki</small>', () => go('scores', renderScores)),
-      btn('⚙️<small>Opcje</small>', () => go('settings', renderSettings)),
+    el.querySelector('.modes').append(
+      card('c-daily', 4, 'Wyzwanie dnia', db ? `dziś: ${fmt(db)}` : 'nowy układ!', () => newRun({ mode: 'daily', seed: dailySeed() })),
+      card('c-time', 2, 'Na czas', `60 s · ${fmt(P.best.time || 0)}`, () => newRun({ mode: 'time' })),
+      card('c-zen', 9, 'Zen', 'bez przegranej', () => newRun({ mode: 'zen' })),
+      card('c-code', 7, 'Wyzwanie', 'wpisz kod', enterCode),
     );
+    const D = el.querySelector('.dock');
+    for (const [ic, lab, f, badge] of [
+      ['📖', 'Kolekcja', () => go('album', renderAlbum), `${P.found.length}/${MAX_LV}`],
+      ['🛍️', 'Sklep', () => go('shop', renderShop), ''],
+      ['🏆', 'Wyniki', () => go('scores', renderScores), ''],
+      ['⚙️', 'Opcje', () => go('settings', renderSettings), ''],
+    ]) {
+      const b = btn(`<span class="dic">${ic}</span><small>${lab}</small>${badge ? `<em>${badge}</em>` : ''}`, f, 'dbtn');
+      D.appendChild(b);
+    }
   }
 
   function openMenu() {
