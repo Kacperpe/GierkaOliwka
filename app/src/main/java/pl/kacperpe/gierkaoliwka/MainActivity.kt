@@ -13,6 +13,9 @@ import android.os.Looper
 import android.provider.Settings
 import android.view.View
 import android.view.WindowManager
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -63,6 +66,7 @@ class MainActivity : Activity() {
             overScrollMode = View.OVER_SCROLL_NEVER
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
+            addJavascriptInterface(Bridge(), "Android")
         }
         setContentView(web)
         hideSystemUi()
@@ -272,6 +276,38 @@ class MainActivity : Activity() {
                 .setDataAndType(uri, "application/vnd.android.package-archive")
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         )
+    }
+
+    // ---------- mostek JS <-> Android ----------
+    inner class Bridge {
+        @JavascriptInterface
+        fun vibrate(ms: Int) {
+            val v = getSystemService(VIBRATOR_SERVICE) as? Vibrator ?: return
+            val d = ms.coerceIn(1, 400).toLong()
+            if (Build.VERSION.SDK_INT >= 26) v.vibrate(VibrationEffect.createOneShot(d, VibrationEffect.DEFAULT_AMPLITUDE))
+            else {
+                @Suppress("DEPRECATION")
+                v.vibrate(d)
+            }
+        }
+
+        @JavascriptInterface
+        fun share(text: String) {
+            main.post {
+                val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
+                startActivity(Intent.createChooser(i, "Wyzwij kogoś"))
+            }
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        web.evaluateJavascript("(window.onBack && window.onBack()) ? 'y' : 'n'") { r ->
+            if (r?.contains("y") != true) {
+                @Suppress("DEPRECATION")
+                super.onBackPressed()
+            }
+        }
     }
 
     // ---------- cykl życia / UI ----------

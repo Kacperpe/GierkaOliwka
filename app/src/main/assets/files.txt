@@ -1,3 +1,6 @@
 # Pliki gry pobierane przez aplikację z repo przy starcie (ścieżki względem app/src/main/assets)
 index.html
+config.js
+audio.js
+meta.js
 game.js

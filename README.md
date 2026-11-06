@@ -24,6 +24,18 @@ Gra na Androida: celujesz napojem, strzelasz w górę stołu, a dwa takie same n
   - 🌊 **Fala** – pcha wszystko w stronę końca stołu (działa od razu)
 - Rekord i stan gry zapisują się automatycznie.
 
+## Tryby i postęp
+- **Tryby:** Klasyczny, 📅 Wyzwanie dnia (ten sam układ dla wszystkich danego dnia), ⏱ Na czas (60 s, +2 s za zamówienie), 🧘 Zen (bez przegranej), 🎯 Kod wyzwania.
+- **Misje:** 3 losowe na partię (monety za każdą, bonus + power-up za wszystkie).
+- **Zamówienia na czas:** pasek pod zamówieniem; zrobione w pierwszej połowie czasu = nagroda x2. Przepadłe znikają bez kary.
+- **Złote napoje ✨:** ~6% strzałów, połączenie daje x3 punktów.
+- **Rosnąca trudność:** im dłużej, tym wyższe poziomy na start; od 40. strzału pojawiają się kamienie 🪨 (znikają same albo od bomby).
+- **Monety, poziom gracza, sklep:** stoły (drewno, marmur, cukierkowy, neon) i tła (dzień, zachód, noc, zima).
+- **Kolekcja:** album napojów + sekretne niespodzianki — teksty sekretów edytujesz w `app/src/main/assets/config.js`.
+- **Powroty:** seria dni 🔥 z nagrodą, prezent dnia 🎁 (losowy power-up).
+- **Wyniki:** lokalna tablica top 10 dla każdego trybu, „Wyzwij kogoś” wysyła kod, który znajomy wpisuje w „Kod wyzwania”.
+- **Efekty:** dźwięki (syntezowane), wibracje, wstrząsy ekranu, slow-mo przy combo x4, baner nowego napoju.
+
 ## Aktualizacje
 - **Gra (HTML/JS w `app/src/main/assets/`)** — aplikacja przy każdym starcie pobiera pliki z najnowszego commita na `main`
   (lista w `assets/files.txt`). Wystarczy push — zmiana jest widoczna po ponownym uruchomieniu, bez instalowania APK.
